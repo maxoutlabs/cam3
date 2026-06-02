@@ -2,7 +2,7 @@
 
 Tray app for Windows: composite a 3D model over your webcam and stream it through **OBS Virtual Camera** (Google Meet, Zoom, etc.).
 
-No hand tracking — pick a model from the tray and adjust it with a simple **Move / Rotate / Scale** panel.
+No hand tracking — pick a model from the tray, then drag it on a **live camera preview** or use a **Blender-style gizmo**.
 
 ## Features
 
@@ -42,12 +42,23 @@ python main.py
 |-------------|--------|
 | **Load model** | Choose a file from `models/` (or refresh after adding files) |
 | **None (camera only)** | Remove the 3D overlay |
-| **Transform controls** (left-click icon) | Move / Rotate / Scale panel |
+| **Transform controls** (left-click icon) | **Camera preview** (drag dot to move) + **Blender-style gizmo** (drag axes) |
 | **Lock model** | Freeze transform |
 | **Reset position** | Center the model |
 | **Exit** | Quit |
 
 Drop models in the [`models/`](models/) folder, then **Load model → Refresh list**.
+
+### Transform panel (left-click tray icon)
+
+| Control | Action |
+|---------|--------|
+| **Camera preview** | Drag the cyan dot to move the model on your feed |
+| **Depth slider** | Move model nearer or farther |
+| **G** | Drag red / green / blue arrows on the gizmo |
+| **R** | Drag rotation rings |
+| **S** | Drag scale handles |
+| **Sensitivity** | Fine / Normal / Coarse |
 
 Optional startup load:
 
@@ -64,7 +75,10 @@ cam3/
 ├── renderer.py          # Off-screen 3D render
 ├── model_state.py       # Transform state
 ├── model_catalog.py     # Discover models/
-├── controls_window.py   # Transform UI
+├── controls_window.py   # Transform panel
+├── viewport_widget.py   # Draggable camera preview
+├── gizmo_widget.py      # Draggable Blender-style gizmo
+├── preview_feed.py      # Live preview for the panel
 ├── gizmo_overlay.py     # On-feed gizmo hint
 ├── models/              # Your .glb files (not in git)
 └── requirements.txt

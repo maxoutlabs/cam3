@@ -38,7 +38,7 @@ class TrayApp:
     def __init__(self, streamer: CameraStreamer) -> None:
         self._streamer = streamer
         self._icon: Icon | None = None
-        self._controls = ControlsWindow(streamer.model)
+        self._controls = ControlsWindow(streamer)
         ensure_models_folder()
 
     def _open_controls(self, _icon: Icon | None = None, _item=None) -> None:

@@ -13,6 +13,7 @@ from pyvirtualcam import PixelFormat
 
 from gizmo_overlay import draw_gizmo
 from model_state import ModelState
+from preview_feed import PreviewFeed
 from renderer import Renderer
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class CameraStreamer:
         self.fps = fps
         self.virtual_camera = virtual_camera
         self.model = ModelState()
+        self.preview = PreviewFeed()
 
         self._current_model: Path | None = None
         self._startup_model = Path(model_path).resolve() if model_path else None
@@ -167,6 +169,15 @@ class CameraStreamer:
                             snap.position,
                             snap.rotation,
                             snap.scale,
+                        )
+
+                        screen = None
+                        if renderer.has_model:
+                            screen = renderer.project_model_center(
+                                snap.position, snap.rotation, snap.scale
+                            )
+                        self.preview.update(
+                            composed, screen, renderer.has_model
                         )
 
                     if renderer.has_model:
