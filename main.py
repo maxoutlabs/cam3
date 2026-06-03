@@ -39,16 +39,26 @@ class TrayApp:
         self._streamer = streamer
         self._icon: Icon | None = None
         self._controls = ControlsWindow(streamer)
+        self._exiting = False
         ensure_models_folder()
+
+    def shutdown(self) -> None:
+        if self._exiting:
+            return
+        self._exiting = True
+        self._controls.shutdown(wait=True, timeout=2.0)
+        self._streamer.stop()
 
     def _open_controls(self, _icon: Icon | None = None, _item=None) -> None:
         self._controls.open()
 
     def _on_exit(self, _icon: Icon, _item) -> None:
-        self._controls.close()
-        self._streamer.stop()
+        self.shutdown()
         if self._icon:
-            self._icon.stop()
+            try:
+                self._icon.stop()
+            except OSError:
+                pass
 
     def _on_toggle_lock(self, _icon: Icon, _item) -> None:
         self._streamer.toggle_lock()
@@ -61,15 +71,22 @@ class TrayApp:
     def _on_reset(self, _icon: Icon, _item) -> None:
         self._streamer.reset_model()
 
+    def _refresh_model_menu(self, icon: Icon) -> None:
+        if self._exiting:
+            return
+        icon.menu = self._build_menu()
+        try:
+            icon.update_menu()
+        except OSError:
+            pass
+
     def _on_clear_model(self, icon: Icon, _item) -> None:
         self._streamer.clear_model()
-        icon.menu = self._build_menu()
-        icon.update_menu()
+        self._refresh_model_menu(icon)
 
     def _on_load_cube(self, icon: Icon, _item) -> None:
         self._streamer.load_default_cube()
-        icon.menu = self._build_menu()
-        icon.update_menu()
+        self._refresh_model_menu(icon)
 
     def _on_load_model(self, icon: Icon, _item, path: Path) -> None:
         try:
@@ -77,8 +94,7 @@ class TrayApp:
         except Exception as exc:
             logger.error("Could not load model: %s", exc)
             return
-        icon.menu = self._build_menu()
-        icon.update_menu()
+        self._refresh_model_menu(icon)
 
     def _make_load_handler(self, path: Path):
         def handler(icon: Icon, _item) -> None:
@@ -87,13 +103,19 @@ class TrayApp:
         return handler
 
     def _none_checked(self, _item) -> bool:
+        if self._exiting:
+            return True
         return not self._streamer.has_overlay
 
     def _cube_checked(self, _item) -> bool:
+        if self._exiting:
+            return False
         return self._streamer.is_cube_mode
 
     def _model_checked(self, path: Path):
         def checked(_item) -> bool:
+            if self._exiting:
+                return False
             cur = self._streamer.current_model
             return cur is not None and cur.resolve() == path.resolve()
 
@@ -184,7 +206,9 @@ def main() -> int:
     try:
         app.run()
     except KeyboardInterrupt:
-        streamer.stop()
+        pass
+    finally:
+        app.shutdown()
     return 0
 
 

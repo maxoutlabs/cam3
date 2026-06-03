@@ -52,13 +52,8 @@ class TransformSnapshot:
 class ModelState:
     """Axes match the webcam feed: X = left/right, Y = up/down, Z = depth."""
 
-    MOVE_STEP = {"fine": 0.04, "normal": 0.12, "coarse": 0.28}
-    ROT_STEP = {"fine": 3.0, "normal": 8.0, "coarse": 18.0}
-    SCALE_STEP = {"fine": 0.03, "normal": 0.08, "coarse": 0.18}
     SCALE_MIN = 0.2
     SCALE_MAX = 4.0
-    ROT_DRAG_SENS = 0.45
-    SCALE_DRAG_SENS = 0.004
 
     # Display follows target each frame (see tick) for smooth motion on the feed.
     _SMOOTH_RATE = 22.0
@@ -73,7 +68,6 @@ class ModelState:
         self._scale = DEFAULT_SCALE
         self._locked = False
         self._mode = ControlMode.MOVE
-        self._step = "normal"
         self._generation = 0
 
     def _touch(self) -> None:
@@ -134,11 +128,6 @@ class ModelState:
         with self._lock:
             self._mode = mode
 
-    def set_step(self, step: str) -> None:
-        if step in self.MOVE_STEP:
-            with self._lock:
-                self._step = step
-
     def reset(self) -> None:
         with self._lock:
             self._target_position = DEFAULT_POSITION.copy()
@@ -185,13 +174,6 @@ class ModelState:
                 locked=self._locked,
             )
 
-    def screen_norm_from_position(self) -> tuple[float, float]:
-        """Approximate normalized screen position (0–1) of model center."""
-        with self._lock:
-            nx = 0.5 + self._position[0] / _SCREEN_X_SPAN
-            ny = 0.5 - self._position[1] / _SCREEN_Y_SPAN
-            return float(np.clip(nx, 0.0, 1.0)), float(np.clip(ny, 0.0, 1.0))
-
     def set_screen_norm(self, nx: float, ny: float) -> None:
         """Place model on screen at normalized coords (drag on screen pad)."""
         with self._lock:
@@ -215,48 +197,3 @@ class ModelState:
             return float(
                 (self._target_position[2] - _DEPTH_MIN) / (_DEPTH_MAX - _DEPTH_MIN)
             )
-
-    def nudge_move_screen(self, dx: int, dy: int, dz: int) -> None:
-        with self._lock:
-            if self._locked:
-                return
-            s = self.MOVE_STEP[self._step]
-            self._target_position[0] += dx * s
-            self._target_position[1] += dy * s
-            self._target_position[2] += dz * s
-            self._touch()
-
-    def drag_move_axis(self, axis: str, delta_px: float, scale: float = 1.0) -> None:
-        with self._lock:
-            if self._locked:
-                return
-            s = self.MOVE_STEP[self._step] * (delta_px / 40.0) * scale
-            if axis == "x":
-                self._target_position[0] += s
-            elif axis == "y":
-                self._target_position[1] += s
-            elif axis == "z":
-                self._target_position[2] += s
-            self._touch()
-
-    def drag_rotate_axis(self, axis: str, delta_px: float) -> None:
-        with self._lock:
-            if self._locked:
-                return
-            s = self.ROT_STEP[self._step] * delta_px * self.ROT_DRAG_SENS
-            idx = {"x": 0, "y": 1, "z": 2}[axis]
-            self._target_euler[idx] += s
-            self._touch()
-
-    def drag_scale(self, delta_px: float) -> None:
-        with self._lock:
-            if self._locked:
-                return
-            self._target_scale = float(
-                np.clip(
-                    self._target_scale + delta_px * self.SCALE_DRAG_SENS,
-                    self.SCALE_MIN,
-                    self.SCALE_MAX,
-                )
-            )
-            self._touch()

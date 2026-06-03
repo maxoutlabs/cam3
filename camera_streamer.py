@@ -47,6 +47,7 @@ class CameraStreamer:
         self._cap: cv2.VideoCapture | None = None
         self._vcam: pyvirtualcam.Camera | None = None
         self._lock = threading.Lock()
+        self._shutting_down = False
 
     @property
     def current_model(self) -> Path | None:
@@ -54,11 +55,15 @@ class CameraStreamer:
 
     @property
     def has_overlay(self) -> bool:
+        if self._shutting_down:
+            return False
         with self._lock:
             return self._renderer is not None and self._renderer.has_model
 
     @property
     def is_cube_mode(self) -> bool:
+        if self._shutting_down:
+            return False
         with self._lock:
             return (
                 self._renderer is not None
@@ -76,9 +81,20 @@ class CameraStreamer:
         self._thread.start()
 
     def stop(self) -> None:
+        if self._shutting_down:
+            return
+        self._shutting_down = True
         self._stop.set()
+        with self._lock:
+            cap = self._cap
+            self._cap = None
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
         if self._thread:
-            self._thread.join(timeout=5.0)
+            self._thread.join(timeout=2.0)
             self._thread = None
 
     def is_locked(self) -> bool:
@@ -175,9 +191,14 @@ class CameraStreamer:
                 last_t = time.perf_counter()
 
                 while not self._stop.is_set():
-                    ok, frame = self._cap.read()
+                    cap = self._cap
+                    if cap is None:
+                        break
+                    ok, frame = cap.read()
+                    if self._stop.is_set():
+                        break
                     if not ok or frame is None:
-                        time.sleep(0.005)
+                        time.sleep(0.002 if self._stop.is_set() else 0.005)
                         continue
 
                     now = time.perf_counter()

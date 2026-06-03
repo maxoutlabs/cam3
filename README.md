@@ -60,8 +60,6 @@ Drop models in the [`models/`](models/) folder, then **Load model → Refresh li
 | **Rotate** | Drag **Tilt X / Turn Y / Roll Z** bars |
 | **Scale** | Drag the **Size** bar |
 
-**Sensitivity:** Fine / Normal / Coarse
-
 ## Project layout
 
 ```

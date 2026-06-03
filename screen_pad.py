@@ -63,6 +63,11 @@ class ScreenPad(tk.Frame):
 
     def redraw(self) -> None:
         c = self._canvas
+        try:
+            if not c.winfo_exists():
+                return
+        except tk.TclError:
+            return
         c.delete("all")
         w, h = self._pw, self._ph
 

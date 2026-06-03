@@ -32,7 +32,10 @@ class ControlsWindow:
         self._on_close = on_close
         self._root: tk.Tk | None = None
         self._thread: threading.Thread | None = None
+        self._done = threading.Event()
+        self._done.set()
         self._body: ttk.Frame | None = None
+        self._mode_var: tk.StringVar | None = None
         self._pad: ScreenPad | None = None
         self._move_extra: MoveDepthControl | None = None
         self._rotate: RotateControls | None = None
@@ -52,15 +55,32 @@ class ControlsWindow:
                 return
         if self._thread and self._thread.is_alive():
             return
+        self._done.clear()
         self._thread = threading.Thread(target=self._run, name="ControlsUI", daemon=True)
         self._thread.start()
 
-    def close(self) -> None:
-        if self._root:
+    def shutdown(self, wait: bool = True, timeout: float = 1.5) -> None:
+        """Quit Tk mainloop and tear down the UI thread."""
+        root = self._root
+        if root is not None:
             try:
-                self._root.after(0, self._destroy)
-            except Exception:
+                root.after(0, self._quit_on_main)
+            except (RuntimeError, tk.TclError):
                 pass
+        if wait and self._thread and self._thread.is_alive():
+            self._done.wait(timeout=timeout)
+            self._thread.join(timeout=timeout)
+
+    def _quit_on_main(self) -> None:
+        self._clear_mode_widgets()
+        root = self._root
+        if root is None:
+            return
+        try:
+            root.quit()
+        except tk.TclError:
+            pass
+        self._destroy()
 
     def _lift(self) -> None:
         if self._root:
@@ -68,18 +88,23 @@ class ControlsWindow:
             self._root.lift()
             self._root.focus_force()
 
-    def _destroy(self) -> None:
-        if self._root:
-            try:
-                self._root.destroy()
-            except tk.TclError:
-                pass
-            self._root = None
-        self._body = None
+    def _clear_mode_widgets(self) -> None:
         self._pad = None
         self._move_extra = None
         self._rotate = None
         self._scale = None
+
+    def _destroy(self) -> None:
+        self._clear_mode_widgets()
+        root = self._root
+        self._root = None
+        self._body = None
+        self._mode_var = None
+        if root is not None:
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass
         if self._on_close:
             self._on_close()
 
@@ -91,7 +116,7 @@ class ControlsWindow:
             self._root.resizable(True, False)
             self._root.minsize(380, 200)
             self._root.attributes("-topmost", True)
-            self._root.protocol("WM_DELETE_WINDOW", self._destroy)
+            self._root.protocol("WM_DELETE_WINDOW", self._quit_on_main)
 
             style = ttk.Style(self._root)
             style.theme_use("clam")
@@ -124,54 +149,32 @@ class ControlsWindow:
             self._body = ttk.Frame(outer)
             self._body.pack(fill=tk.BOTH)
 
-            step_row = ttk.Frame(outer)
-            step_row.pack(fill=tk.X, pady=(10, 0))
-            ttk.Label(step_row, text="Sensitivity").pack(side=tk.LEFT)
-            self._step_var = tk.StringVar(value="normal")
-            for name in ("fine", "normal", "coarse"):
-                ttk.Radiobutton(
-                    step_row,
-                    text=name.capitalize(),
-                    value=name,
-                    variable=self._step_var,
-                    command=lambda: self._model.set_step(self._step_var.get()),
-                ).pack(side=tk.LEFT, padx=6)
-
             btn_row = ttk.Frame(outer)
-            btn_row.pack(fill=tk.X, pady=(8, 0))
+            btn_row.pack(fill=tk.X, pady=(10, 0))
             ttk.Button(btn_row, text="Reset", command=self._on_reset).pack(side=tk.LEFT)
-            ttk.Button(btn_row, text="Hide", command=self._destroy).pack(side=tk.RIGHT)
+            ttk.Button(btn_row, text="Hide", command=self._quit_on_main).pack(side=tk.RIGHT)
 
             self._show_mode(ControlMode.MOVE)
             self._root.mainloop()
         except Exception:
             logger.exception("Transform panel failed")
         finally:
-            self._root = None
-            self._body = None
-            self._pad = None
-            self._move_extra = None
-            self._rotate = None
-            self._scale = None
+            self._destroy()
             self._thread = None
+            self._done.set()
 
     def _on_reset(self) -> None:
         self._model.reset()
-        if self._pad:
-            self._pad.redraw()
-        if self._move_extra:
-            self._move_extra.sync()
-        if self._rotate:
-            self._rotate.sync()
-        if self._scale:
-            self._scale.sync()
-        self._show_mode(ControlMode(self._mode_var.get()))
+        if self._mode_var is not None:
+            self._show_mode(ControlMode(self._mode_var.get()))
 
     def _show_mode(self, mode: ControlMode) -> None:
-        self._mode_var.set(mode.value)
+        if self._mode_var is not None:
+            self._mode_var.set(mode.value)
         self._model.set_mode(mode)
         if self._body is None:
             return
+        self._clear_mode_widgets()
         for w in self._body.winfo_children():
             w.destroy()
 
