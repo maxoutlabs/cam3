@@ -46,7 +46,6 @@ class TransformSnapshot:
     rotation: np.ndarray
     scale: float
     mode: ControlMode
-    show_gizmo: bool
     locked: bool
 
 
@@ -68,7 +67,6 @@ class ModelState:
         self._scale = DEFAULT_SCALE
         self._locked = False
         self._mode = ControlMode.MOVE
-        self._show_gizmo = False
         self._step = "normal"
 
     @property
@@ -89,10 +87,6 @@ class ModelState:
         with self._lock:
             self._mode = mode
 
-    def set_show_gizmo(self, show: bool) -> None:
-        with self._lock:
-            self._show_gizmo = show
-
     def set_step(self, step: str) -> None:
         if step in self.MOVE_STEP:
             with self._lock:
@@ -104,6 +98,29 @@ class ModelState:
             self._euler_deg = DEFAULT_EULER_DEG.copy()
             self._scale = DEFAULT_SCALE
 
+    @property
+    def euler_deg(self) -> np.ndarray:
+        with self._lock:
+            return self._euler_deg.copy()
+
+    @property
+    def scale(self) -> float:
+        with self._lock:
+            return self._scale
+
+    def set_euler_axis(self, axis: str, degrees: float) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            idx = {"x": 0, "y": 1, "z": 2}[axis]
+            self._euler_deg[idx] = float(degrees)
+
+    def set_scale(self, value: float) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            self._scale = float(np.clip(value, self.SCALE_MIN, self.SCALE_MAX))
+
     def snapshot(self) -> TransformSnapshot:
         with self._lock:
             return TransformSnapshot(
@@ -111,7 +128,6 @@ class ModelState:
                 rotation=euler_xyz_deg_to_quat(self._euler_deg),
                 scale=self._scale,
                 mode=self._mode,
-                show_gizmo=self._show_gizmo,
                 locked=self._locked,
             )
 

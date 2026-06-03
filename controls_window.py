@@ -1,4 +1,4 @@
-"""Transform panel: camera viewport + Blender-style draggable gizmo."""
+"""Transform panel: screen pad + drag sliders (no live webcam, no feed overlay)."""
 
 from __future__ import annotations
 
@@ -8,10 +8,9 @@ import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
-from gizmo_widget import TransformGizmo
+from drag_controls import MoveDepthControl, RotateControls, ScaleControls
 from model_state import ControlMode, ModelState
-from preview_feed import PreviewFeed
-from viewport_widget import CameraViewport
+from screen_pad import ScreenPad
 
 if TYPE_CHECKING:
     from camera_streamer import CameraStreamer
@@ -30,13 +29,14 @@ class ControlsWindow:
     ) -> None:
         self._streamer = streamer
         self._model: ModelState = streamer.model
-        self._feed: PreviewFeed = streamer.preview
         self._on_close = on_close
         self._root: tk.Tk | None = None
         self._thread: threading.Thread | None = None
-        self._viewport: CameraViewport | None = None
-        self._gizmo: TransformGizmo | None = None
-        self._tick_id: str | None = None
+        self._body: ttk.Frame | None = None
+        self._pad: ScreenPad | None = None
+        self._move_extra: MoveDepthControl | None = None
+        self._rotate: RotateControls | None = None
+        self._scale: ScaleControls | None = None
 
     @property
     def is_open(self) -> bool:
@@ -69,33 +69,22 @@ class ControlsWindow:
             self._root.focus_force()
 
     def _destroy(self) -> None:
-        if self._tick_id and self._root:
-            try:
-                self._root.after_cancel(self._tick_id)
-            except tk.TclError:
-                pass
-        self._tick_id = None
-        self._model.set_show_gizmo(False)
         if self._root:
             try:
                 self._root.destroy()
             except tk.TclError:
                 pass
             self._root = None
-        self._viewport = None
-        self._gizmo = None
+        self._body = None
+        self._pad = None
+        self._move_extra = None
+        self._rotate = None
+        self._scale = None
         if self._on_close:
             self._on_close()
 
-    def _tick(self) -> None:
-        if self._viewport:
-            self._viewport.refresh()
-        if self._root:
-            self._tick_id = self._root.after(66, self._tick)
-
     def _run(self) -> None:
         try:
-            self._model.set_show_gizmo(True)
             self._root = tk.Tk()
             self._root.title("Cam3 — Transform")
             self._root.configure(bg=_BG)
@@ -120,30 +109,19 @@ class ControlsWindow:
             self._mode_var = tk.StringVar(value=ControlMode.MOVE.value)
 
             for label, mode in (
-                ("G  Move", ControlMode.MOVE),
-                ("R  Rotate", ControlMode.ROTATE),
-                ("S  Scale", ControlMode.SCALE),
+                ("Move", ControlMode.MOVE),
+                ("Rotate", ControlMode.ROTATE),
+                ("Scale", ControlMode.SCALE),
             ):
                 ttk.Button(
                     mode_row,
                     text=label,
-                    command=lambda m=mode: self._set_mode(m),
-                    width=9,
+                    command=lambda m=mode: self._show_mode(m),
+                    width=8,
                 ).pack(side=tk.LEFT, padx=2)
 
-            content = ttk.Frame(outer)
-            content.pack()
-
-            left = ttk.Frame(content)
-            left.pack(side=tk.LEFT, padx=(0, 10))
-            self._viewport = CameraViewport(left, self._model, self._feed)
-            self._viewport.pack()
-
-            right = ttk.Frame(content)
-            right.pack(side=tk.LEFT)
-            ttk.Label(right, text="Gizmo", foreground="#aaa").pack()
-            self._gizmo = TransformGizmo(right, self._model, size=220)
-            self._gizmo.pack()
+            self._body = ttk.Frame(outer)
+            self._body.pack(fill=tk.BOTH)
 
             step_row = ttk.Frame(outer)
             step_row.pack(fill=tk.X, pady=(10, 0))
@@ -160,25 +138,44 @@ class ControlsWindow:
 
             btn_row = ttk.Frame(outer)
             btn_row.pack(fill=tk.X, pady=(8, 0))
-            ttk.Button(btn_row, text="Reset", command=self._model.reset).pack(
-                side=tk.LEFT
-            )
+            ttk.Button(btn_row, text="Reset", command=self._on_reset).pack(side=tk.LEFT)
             ttk.Button(btn_row, text="Hide", command=self._destroy).pack(side=tk.RIGHT)
 
-            self._set_mode(ControlMode.MOVE)
-            self._tick()
+            self._show_mode(ControlMode.MOVE)
             self._root.mainloop()
         except Exception:
             logger.exception("Transform panel failed")
         finally:
-            self._model.set_show_gizmo(False)
             self._root = None
-            self._viewport = None
-            self._gizmo = None
+            self._body = None
+            self._pad = None
+            self._move_extra = None
+            self._rotate = None
+            self._scale = None
             self._thread = None
 
-    def _set_mode(self, mode: ControlMode) -> None:
+    def _on_reset(self) -> None:
+        self._model.reset()
+        if self._pad:
+            self._pad.redraw()
+        self._show_mode(ControlMode(self._mode_var.get()))
+
+    def _show_mode(self, mode: ControlMode) -> None:
         self._mode_var.set(mode.value)
         self._model.set_mode(mode)
-        if self._gizmo:
-            self._gizmo.set_mode(mode)
+        if self._body is None:
+            return
+        for w in self._body.winfo_children():
+            w.destroy()
+
+        if mode == ControlMode.MOVE:
+            self._pad = ScreenPad(self._body, self._model, mirror_x=True)
+            self._pad.pack()
+            self._move_extra = MoveDepthControl(self._body, self._model)
+            self._move_extra.pack(fill=tk.X)
+        elif mode == ControlMode.ROTATE:
+            self._rotate = RotateControls(self._body, self._model)
+            self._rotate.pack(fill=tk.X)
+        else:
+            self._scale = ScaleControls(self._body, self._model)
+            self._scale.pack(fill=tk.X)

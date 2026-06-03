@@ -2,13 +2,13 @@
 
 Tray app for Windows: composite a 3D model over your webcam and stream it through **OBS Virtual Camera** (Google Meet, Zoom, etc.).
 
-No hand tracking — pick a model from the tray, then drag it on a **live camera preview** or use a **Blender-style gizmo**.
+Pick a model from the tray, then position it with a **screen pad** and **drag sliders**. Clean output — no debug overlays on the video.
 
 ## Features
 
 - Webcam-only by default; load `.glb` / `.gltf` from the tray
-- One active model at a time (switching replaces the previous)
-- Screen-aligned move controls (left is left on your feed)
+- **Screen pad** — simple rectangle; drag the dot (not a second camera preview)
+- **Drag sliders** for depth, rotation, and scale
 - Lightweight OpenGL overlay via [pyrender](https://github.com/mmatl/pyrender)
 - System tray UI ([pystray](https://github.com/moses-palmer/pystray))
 
@@ -24,6 +24,8 @@ No hand tracking — pick a model from the tray, then drag it on a **live camera
 1. Install OBS Studio.
 2. Open OBS → **Start Virtual Camera** → **Stop Virtual Camera** → close OBS.
 3. In your meeting app, select **OBS Virtual Camera**.
+
+If your OBS scene flips the camera horizontally, the screen pad uses the same flip so **drag left = model moves left** on your feed.
 
 ## Install
 
@@ -42,45 +44,36 @@ python main.py
 |-------------|--------|
 | **Load model** | Choose a file from `models/` (or refresh after adding files) |
 | **None (camera only)** | Remove the 3D overlay |
-| **Transform controls** (left-click icon) | **Camera preview** (drag dot to move) + **Blender-style gizmo** (drag axes) |
+| **Transform controls** (left-click icon) | Open the control panel |
 | **Lock model** | Freeze transform |
 | **Reset position** | Center the model |
 | **Exit** | Quit |
 
 Drop models in the [`models/`](models/) folder, then **Load model → Refresh list**.
 
-### Transform panel (left-click tray icon)
+### Transform panel
 
-| Control | Action |
-|---------|--------|
-| **Camera preview** | Drag the cyan dot to move the model on your feed |
-| **Depth slider** | Move model nearer or farther |
-| **G** | Drag red / green / blue arrows on the gizmo |
-| **R** | Drag rotation rings |
-| **S** | Drag scale handles |
-| **Sensitivity** | Fine / Normal / Coarse |
+| Tab | Controls |
+|-----|----------|
+| **Move** | **Screen pad** — drag the dot for left/right and up/down. **Depth slider** — near ↔ far (this is the same as moving toward/away from the camera; there is no separate Z gizmo). |
+| **Rotate** | Drag **Tilt X / Turn Y / Roll Z** bars |
+| **Scale** | Drag the **Size** bar |
 
-Optional startup load:
-
-```bash
-python main.py --model path\to\model.glb
-```
+**Sensitivity:** Fine / Normal / Coarse
 
 ## Project layout
 
 ```
 cam3/
-├── main.py              # Entry + tray
-├── camera_streamer.py   # Webcam → composite → virtual cam
-├── renderer.py          # Off-screen 3D render
-├── model_state.py       # Transform state
-├── model_catalog.py     # Discover models/
-├── controls_window.py   # Transform panel
-├── viewport_widget.py   # Draggable camera preview
-├── gizmo_widget.py      # Draggable Blender-style gizmo
-├── preview_feed.py      # Live preview for the panel
-├── gizmo_overlay.py     # On-feed gizmo hint
-├── models/              # Your .glb files (not in git)
+├── main.py
+├── camera_streamer.py
+├── renderer.py
+├── model_state.py
+├── model_catalog.py
+├── controls_window.py
+├── screen_pad.py
+├── drag_controls.py
+├── models/
 └── requirements.txt
 ```
 
