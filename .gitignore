@@ -10,6 +10,7 @@ build/
 # Local / secrets
 .env
 .env.*
+/refs
 
 # Downloaded or generated
 hand_landmarker.task
