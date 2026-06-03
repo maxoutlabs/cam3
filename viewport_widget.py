@@ -30,8 +30,8 @@ class CameraViewport(tk.Frame):
         super().__init__(parent, bg=_BG, **kwargs)
         self._model = model
         self._feed = feed
-        self._w = width
-        self._h = height
+        self._preview_w = width
+        self._preview_h = height
         self._photo: ImageTk.PhotoImage | None = None
         self._dragging = False
         self._on_change: Callable[[], None] | None = None
@@ -117,8 +117,8 @@ class CameraViewport(tk.Frame):
             self._canvas.create_image(0, 0, anchor=tk.NW, image=self._photo)
         else:
             self._canvas.create_text(
-                self._w // 2,
-                self._h // 2,
+                self._preview_w // 2,
+                self._preview_h // 2,
                 text="Waiting for camera…",
                 fill="#666",
                 font=("Segoe UI", 10),
@@ -128,8 +128,8 @@ class CameraViewport(tk.Frame):
             self._depth.set(int(self._model.depth_norm() * 100))
 
     def _event_to_norm(self, event: tk.Event) -> tuple[float, float]:
-        nx = max(0.0, min(1.0, event.x / self._w))
-        ny = max(0.0, min(1.0, event.y / self._h))
+        nx = max(0.0, min(1.0, event.x / self._preview_w))
+        ny = max(0.0, min(1.0, event.y / self._preview_h))
         return nx, ny
 
     def _on_press(self, event: tk.Event) -> None:

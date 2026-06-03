@@ -105,6 +105,30 @@ class Renderer:
         self._scene.add_node(self._node)
         self._model_path = Path(path).resolve()
 
+    def project_model_center(
+        self,
+        position: np.ndarray,
+        rotation_quat: np.ndarray,
+        scale: float,
+    ) -> tuple[float, float] | None:
+        """Project model origin to pixel coords (x right, y down)."""
+        world = _model_matrix(position, rotation_quat, scale)[:3, 3]
+        cam_pose = np.eye(4)
+        cam_pose[2, 3] = self._CAM_Z
+        cam_from_world = np.linalg.inv(cam_pose)
+        p = cam_from_world @ np.append(world, 1.0)
+        p = p[:3]
+        depth = -p[2]
+        if depth < 0.05:
+            return None
+
+        tan_half = np.tan(self._YFOV * 0.5)
+        x_ndc = p[0] / depth / (tan_half * self._aspect)
+        y_ndc = p[1] / depth / tan_half
+        u = (x_ndc * 0.5 + 0.5) * self.width
+        v = (1.0 - (y_ndc * 0.5 + 0.5)) * self.height
+        return float(u), float(v)
+
     def resize(self, width: int, height: int) -> None:
         if width == self.width and height == self.height:
             return
