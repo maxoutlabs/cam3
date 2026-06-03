@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pyrender
 import trimesh
 from pyrender.constants import RenderFlags
+
+# Render overlay at half resolution, upscale — much faster, still looks fine
+_RENDER_SCALE = 0.55
+
+_BOX_EDGES = (
+    (0, 1), (1, 2), (2, 3), (3, 0),
+    (4, 5), (5, 6), (6, 7), (7, 4),
+    (0, 4), (1, 5), (2, 6), (3, 7),
+)
 
 
 def _quat_to_matrix(quat_xyzw: np.ndarray) -> np.ndarray:
@@ -31,29 +41,69 @@ def _model_matrix(position: np.ndarray, rotation_quat: np.ndarray, scale: float)
     return m
 
 
+def _wireframe_box(size: float = 0.65, edge_radius: float = 0.012) -> trimesh.Trimesh:
+    h = size * 0.5
+    corners = np.array(
+        [
+            [-h, -h, -h], [h, -h, -h], [h, h, -h], [-h, h, -h],
+            [-h, -h, h], [h, -h, h], [h, h, h], [-h, h, h],
+        ],
+        dtype=np.float64,
+    )
+    parts: list[trimesh.Trimesh] = []
+    for i, j in _BOX_EDGES:
+        p0, p1 = corners[i], corners[j]
+        seg = p1 - p0
+        length = float(np.linalg.norm(seg))
+        if length < 1e-8:
+            continue
+        cyl = trimesh.creation.cylinder(radius=edge_radius, height=length, sections=5)
+        direction = seg / length
+        tf = trimesh.geometry.align_vectors([0.0, 0.0, 1.0], direction)
+        cyl.apply_transform(tf)
+        cyl.apply_translation((p0 + p1) * 0.5)
+        parts.append(cyl)
+    return trimesh.util.concatenate(parts)
+
+
+def _normalize_mesh(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    mesh = mesh.copy()
+    mesh.apply_translation(-mesh.centroid)
+    extent = float(np.max(mesh.extents))
+    if extent > 1e-6:
+        mesh.apply_scale(1.0 / extent)
+    return mesh
+
+
 def _load_mesh_file(path: str | Path) -> trimesh.Trimesh:
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(f"Model not found: {path}")
 
-    loaded = trimesh.load(str(p), force="mesh", process=False)
-    if isinstance(loaded, trimesh.Scene):
-        meshes = [g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)]
-        if not meshes:
-            raise ValueError(f"No mesh geometry in {path}")
-        loaded = trimesh.util.concatenate(meshes)
-    if not isinstance(loaded, trimesh.Trimesh):
-        raise ValueError(f"Unsupported model type: {path}")
+    suffix = p.suffix.lower()
+    try:
+        loaded = trimesh.load(str(p), force=None)
+    except Exception:
+        loaded = trimesh.load(str(p))
 
-    loaded.apply_translation(-loaded.centroid)
-    extent = float(np.max(loaded.extents))
-    if extent > 1e-6:
-        loaded.apply_scale(1.0 / extent)
-    return loaded
+    if isinstance(loaded, trimesh.Scene):
+        meshes = [
+            g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)
+        ]
+        if not meshes:
+            raise ValueError(f"No mesh in {path}")
+        if len(meshes) == 1:
+            return _normalize_mesh(meshes[0])
+        return _normalize_mesh(trimesh.util.concatenate(meshes))
+
+    if isinstance(loaded, trimesh.Trimesh):
+        return _normalize_mesh(loaded)
+
+    raise ValueError(f"Unsupported file: {path}")
 
 
 class Renderer:
-    """Renders an optional mesh with pyrender and composites over BGR frames."""
+    """Renders mesh with pyrender; caches overlay when transform is unchanged."""
 
     _YFOV = np.pi / 4.0
     _CAM_Z = 0.01
@@ -62,72 +112,92 @@ class Renderer:
         self.width = width
         self.height = height
         self._model_path: Path | None = None
-        self._node: pyrender.Node | None = None
+        self._is_cube = False
+        self._nodes: list[pyrender.Node] = []
 
         self._scene = pyrender.Scene(
             bg_color=[0.0, 0.0, 0.0, 0.0],
-            ambient_light=[0.55, 0.55, 0.55],
+            ambient_light=[0.6, 0.6, 0.6],
         )
 
         self._aspect = width / height
+        self._add_camera()
+        light = pyrender.DirectionalLight(color=np.ones(3), intensity=2.5)
+        lp = np.eye(4)
+        lp[:3, 3] = [1.0, 2.0, 2.5]
+        self._scene.add(light, pose=lp)
+
+        rw = max(64, int(width * _RENDER_SCALE))
+        rh = max(64, int(height * _RENDER_SCALE))
+        self._render_w = rw
+        self._render_h = rh
+        self._renderer = pyrender.OffscreenRenderer(rw, rh)
+
+        self._cache_key: tuple | None = None
+        self._cache_bgr: np.ndarray | None = None
+        self._cache_alpha: np.ndarray | None = None
+
+    def _add_camera(self) -> None:
         cam = pyrender.PerspectiveCamera(yfov=self._YFOV, aspectRatio=self._aspect)
         cam_pose = np.eye(4)
         cam_pose[2, 3] = self._CAM_Z
+        if hasattr(self, "_cam_node"):
+            self._scene.remove_node(self._cam_node)
         self._cam_node = self._scene.add(cam, pose=cam_pose)
 
-        light = pyrender.DirectionalLight(color=np.ones(3), intensity=2.8)
-        light_pose = np.eye(4)
-        light_pose[:3, 3] = [1.0, 2.0, 2.5]
-        self._scene.add(light, pose=light_pose)
+    def _clear_nodes(self) -> None:
+        for node in self._nodes:
+            self._scene.remove_node(node)
+        self._nodes.clear()
+        self._invalidate_cache()
 
-        self._renderer = pyrender.OffscreenRenderer(width, height)
+    def _invalidate_cache(self) -> None:
+        self._cache_key = None
+        self._cache_bgr = None
+        self._cache_alpha = None
 
     @property
     def has_model(self) -> bool:
-        return self._node is not None
+        return len(self._nodes) > 0
 
     @property
     def model_path(self) -> Path | None:
         return self._model_path
 
-    def clear_model(self) -> None:
-        if self._node is not None:
-            self._scene.remove_node(self._node)
-            self._node = None
+    def load_default_cube(self) -> None:
+        self._clear_nodes()
+        mesh = _wireframe_box()
+        pr = pyrender.Mesh.from_trimesh(
+            mesh,
+            smooth=False,
+            material=pyrender.MetallicRoughnessMaterial(
+                baseColorFactor=[0.35, 0.92, 1.0, 1.0],
+                metallicFactor=0.05,
+                roughnessFactor=0.4,
+            ),
+        )
+        node = pyrender.Node(mesh=pr, matrix=np.eye(4))
+        self._scene.add_node(node)
+        self._nodes.append(node)
         self._model_path = None
+        self._is_cube = True
+        self._invalidate_cache()
+
+    def clear_model(self) -> None:
+        self._clear_nodes()
+        self._model_path = None
+        self._is_cube = False
 
     def set_model(self, path: str | Path) -> None:
-        """Replace any current model with the file at path."""
-        self.clear_model()
+        self._clear_nodes()
         mesh = _load_mesh_file(path)
-        pr_mesh = pyrender.Mesh.from_trimesh(mesh, smooth=True)
-        self._node = pyrender.Node(mesh=pr_mesh, matrix=np.eye(4))
-        self._scene.add_node(self._node)
+        pr = pyrender.Mesh.from_trimesh(mesh, smooth=True)
+        node = pyrender.Node(mesh=pr, matrix=np.eye(4))
+        self._scene.add_node(node)
+        self._nodes.append(node)
         self._model_path = Path(path).resolve()
-
-    def project_model_center(
-        self,
-        position: np.ndarray,
-        rotation_quat: np.ndarray,
-        scale: float,
-    ) -> tuple[float, float] | None:
-        """Project model origin to pixel coords (x right, y down)."""
-        world = _model_matrix(position, rotation_quat, scale)[:3, 3]
-        cam_pose = np.eye(4)
-        cam_pose[2, 3] = self._CAM_Z
-        cam_from_world = np.linalg.inv(cam_pose)
-        p = cam_from_world @ np.append(world, 1.0)
-        p = p[:3]
-        depth = -p[2]
-        if depth < 0.05:
-            return None
-
-        tan_half = np.tan(self._YFOV * 0.5)
-        x_ndc = p[0] / depth / (tan_half * self._aspect)
-        y_ndc = p[1] / depth / tan_half
-        u = (x_ndc * 0.5 + 0.5) * self.width
-        v = (1.0 - (y_ndc * 0.5 + 0.5)) * self.height
-        return float(u), float(v)
+        self._is_cube = False
+        self._invalidate_cache()
 
     def resize(self, width: int, height: int) -> None:
         if width == self.width and height == self.height:
@@ -135,13 +205,33 @@ class Renderer:
         self.width = width
         self.height = height
         self._aspect = width / height
+        self._render_w = max(64, int(width * _RENDER_SCALE))
+        self._render_h = max(64, int(height * _RENDER_SCALE))
         self._renderer.delete()
-        self._renderer = pyrender.OffscreenRenderer(width, height)
-        cam = pyrender.PerspectiveCamera(yfov=self._YFOV, aspectRatio=self._aspect)
-        self._scene.remove_node(self._cam_node)
-        cam_pose = np.eye(4)
-        cam_pose[2, 3] = self._CAM_Z
-        self._cam_node = self._scene.add(cam, pose=cam_pose)
+        self._renderer = pyrender.OffscreenRenderer(self._render_w, self._render_h)
+        self._add_camera()
+        self._invalidate_cache()
+
+    def _render_layer(
+        self,
+        position: np.ndarray,
+        rotation_quat: np.ndarray,
+        scale: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        pose = _model_matrix(position, rotation_quat, scale)
+        for node in self._nodes:
+            self._scene.set_pose(node, pose)
+
+        color_rgba, _ = self._renderer.render(self._scene, flags=RenderFlags.RGBA)
+        rgb = cv2.resize(
+            color_rgba[:, :, :3], (self.width, self.height), interpolation=cv2.INTER_LINEAR
+        )
+        alpha = cv2.resize(
+            color_rgba[:, :, 3], (self.width, self.height), interpolation=cv2.INTER_LINEAR
+        )
+        bgr = rgb[:, :, ::-1].astype(np.float32)
+        a = (alpha.astype(np.float32) / 255.0)[:, :, np.newaxis]
+        return bgr, a
 
     def render_overlay(
         self,
@@ -149,24 +239,35 @@ class Renderer:
         position: np.ndarray,
         rotation_quat: np.ndarray,
         scale: float,
+        generation: int,
     ) -> np.ndarray:
         if not self.has_model:
             return frame_bgr
 
-        model = _model_matrix(position, rotation_quat, scale)
-        self._scene.set_pose(self._node, model)
-
-        color_rgba, _depth = self._renderer.render(
-            self._scene, flags=RenderFlags.RGBA
+        key = (
+            generation,
+            self.width,
+            self.height,
+            round(float(position[0]), 4),
+            round(float(position[1]), 4),
+            round(float(position[2]), 4),
+            round(float(rotation_quat[0]), 4),
+            round(float(rotation_quat[1]), 4),
+            round(float(rotation_quat[2]), 4),
+            round(float(rotation_quat[3]), 4),
+            round(float(scale), 4),
+            str(self._model_path),
         )
-
-        alpha = color_rgba[:, :, 3:4].astype(np.float32) / 255.0
-        rgb = color_rgba[:, :, :3].astype(np.float32)
+        if key != self._cache_key:
+            self._cache_bgr, self._cache_alpha = self._render_layer(
+                position, rotation_quat, scale
+            )
+            self._cache_key = key
 
         bg = frame_bgr.astype(np.float32)
-        comp_bgr = bg * (1.0 - alpha) + rgb[:, :, ::-1] * alpha
-        return np.clip(comp_bgr, 0, 255).astype(np.uint8)
+        out = bg * (1.0 - self._cache_alpha) + self._cache_bgr * self._cache_alpha
+        return np.clip(out, 0, 255).astype(np.uint8)
 
     def close(self) -> None:
-        self.clear_model()
+        self._clear_nodes()
         self._renderer.delete()

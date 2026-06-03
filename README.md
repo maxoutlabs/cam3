@@ -6,7 +6,7 @@ Pick a model from the tray, then position it with a **screen pad** and **drag sl
 
 ## Features
 
-- Webcam-only by default; load `.glb` / `.gltf` from the tray
+- Starts with a **wireframe cube**; load `.glb` / `.gltf` from the tray
 - **Screen pad** — simple rectangle; drag the dot (not a second camera preview)
 - **Drag sliders** for depth, rotation, and scale
 - Lightweight OpenGL overlay via [pyrender](https://github.com/mmatl/pyrender)
@@ -42,8 +42,9 @@ python main.py
 
 | Tray action | Effect |
 |-------------|--------|
-| **Load model** | Choose a file from `models/` (or refresh after adding files) |
-| **None (camera only)** | Remove the 3D overlay |
+| **Wireframe cube** | Default cyan wireframe box |
+| **Load model** | Choose a `.glb` from `models/` (refresh list after adding files) |
+| **None (camera only)** | Webcam only, no 3D overlay |
 | **Transform controls** (left-click icon) | Open the control panel |
 | **Lock model** | Freeze transform |
 | **Reset position** | Center the model |

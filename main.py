@@ -66,10 +66,16 @@ class TrayApp:
         icon.menu = self._build_menu()
         icon.update_menu()
 
+    def _on_load_cube(self, icon: Icon, _item) -> None:
+        self._streamer.load_default_cube()
+        icon.menu = self._build_menu()
+        icon.update_menu()
+
     def _on_load_model(self, icon: Icon, _item, path: Path) -> None:
         try:
             self._streamer.load_model(path)
-        except Exception:
+        except Exception as exc:
+            logger.error("Could not load model: %s", exc)
             return
         icon.menu = self._build_menu()
         icon.update_menu()
@@ -81,7 +87,10 @@ class TrayApp:
         return handler
 
     def _none_checked(self, _item) -> bool:
-        return self._streamer.current_model is None
+        return not self._streamer.has_overlay
+
+    def _cube_checked(self, _item) -> bool:
+        return self._streamer.is_cube_mode
 
     def _model_checked(self, path: Path):
         def checked(_item) -> bool:
@@ -97,10 +106,16 @@ class TrayApp:
     def _build_model_submenu(self) -> Menu:
         items: list[MenuItem] = [
             MenuItem(
+                "Wireframe cube",
+                self._on_load_cube,
+                checked=self._cube_checked,
+            ),
+            MenuItem(
                 "None (camera only)",
                 self._on_clear_model,
                 checked=self._none_checked,
             ),
+            Menu.SEPARATOR,
         ]
         for label, path in discover_models():
             items.append(

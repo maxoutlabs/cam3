@@ -158,6 +158,12 @@ class ControlsWindow:
         self._model.reset()
         if self._pad:
             self._pad.redraw()
+        if self._move_extra:
+            self._move_extra.sync()
+        if self._rotate:
+            self._rotate.sync()
+        if self._scale:
+            self._scale.sync()
         self._show_mode(ControlMode(self._mode_var.get()))
 
     def _show_mode(self, mode: ControlMode) -> None:

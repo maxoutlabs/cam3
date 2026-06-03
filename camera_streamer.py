@@ -28,12 +28,14 @@ class CameraStreamer:
         fps: int = 30,
         model_path: str | Path | None = None,
         virtual_camera: str | None = None,
+        start_with_cube: bool = True,
     ) -> None:
         self.camera_index = camera_index
         self.width = width
         self.height = height
         self.fps = fps
         self.virtual_camera = virtual_camera
+        self.start_with_cube = start_with_cube
         self.model = ModelState()
 
         self._current_model: Path | None = None
@@ -49,6 +51,20 @@ class CameraStreamer:
     @property
     def current_model(self) -> Path | None:
         return self._current_model
+
+    @property
+    def has_overlay(self) -> bool:
+        with self._lock:
+            return self._renderer is not None and self._renderer.has_model
+
+    @property
+    def is_cube_mode(self) -> bool:
+        with self._lock:
+            return (
+                self._renderer is not None
+                and self._renderer.has_model
+                and self._renderer._is_cube
+            )
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -80,14 +96,18 @@ class CameraStreamer:
             if self._renderer is None:
                 self._current_model = path
                 return
-            try:
-                self._renderer.set_model(path)
-                self._current_model = path
-                self.model.reset()
-                logger.info("Loaded model: %s", path.name)
-            except Exception:
-                logger.exception("Failed to load model: %s", path)
-                raise
+            self._renderer.set_model(path)
+            self._current_model = path
+            self.model.reset()
+            logger.info("Loaded model: %s", path.name)
+
+    def load_default_cube(self) -> None:
+        with self._lock:
+            if self._renderer:
+                self._renderer.load_default_cube()
+            self._current_model = None
+            self.model.reset()
+            logger.info("Showing default wireframe cube")
 
     def clear_model(self) -> None:
         with self._lock:
@@ -123,8 +143,14 @@ class CameraStreamer:
             with self._lock:
                 self._renderer = Renderer(self.width, self.height)
                 if self._startup_model and self._startup_model.is_file():
-                    self._renderer.set_model(self._startup_model)
-                    self._current_model = self._startup_model
+                    try:
+                        self._renderer.set_model(self._startup_model)
+                        self._current_model = self._startup_model
+                    except Exception:
+                        logger.exception("Startup model failed, using cube")
+                        self._renderer.load_default_cube()
+                elif self.start_with_cube:
+                    self._renderer.load_default_cube()
 
             vcam_kwargs: dict = {
                 "width": self.width,
@@ -151,6 +177,7 @@ class CameraStreamer:
                         time.sleep(0.005)
                         continue
 
+                    gen = self.model.generation
                     snap = self.model.snapshot()
                     with self._lock:
                         renderer = self._renderer
@@ -166,6 +193,7 @@ class CameraStreamer:
                             snap.position,
                             snap.rotation,
                             snap.scale,
+                            gen,
                         )
 
                     rgb = cv2.cvtColor(composed, cv2.COLOR_BGR2RGB)

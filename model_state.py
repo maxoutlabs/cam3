@@ -68,6 +68,15 @@ class ModelState:
         self._locked = False
         self._mode = ControlMode.MOVE
         self._step = "normal"
+        self._generation = 0
+
+    def _touch(self) -> None:
+        self._generation += 1
+
+    @property
+    def generation(self) -> int:
+        with self._lock:
+            return self._generation
 
     @property
     def locked(self) -> bool:
@@ -97,6 +106,7 @@ class ModelState:
             self._position = DEFAULT_POSITION.copy()
             self._euler_deg = DEFAULT_EULER_DEG.copy()
             self._scale = DEFAULT_SCALE
+            self._touch()
 
     @property
     def euler_deg(self) -> np.ndarray:
@@ -114,12 +124,14 @@ class ModelState:
                 return
             idx = {"x": 0, "y": 1, "z": 2}[axis]
             self._euler_deg[idx] = float(degrees)
+            self._touch()
 
     def set_scale(self, value: float) -> None:
         with self._lock:
             if self._locked:
                 return
             self._scale = float(np.clip(value, self.SCALE_MIN, self.SCALE_MAX))
+            self._touch()
 
     def snapshot(self) -> TransformSnapshot:
         with self._lock:
@@ -139,20 +151,22 @@ class ModelState:
             return float(np.clip(nx, 0.0, 1.0)), float(np.clip(ny, 0.0, 1.0))
 
     def set_screen_norm(self, nx: float, ny: float) -> None:
-        """Place model on screen at normalized coords (drag on camera preview)."""
+        """Place model on screen at normalized coords (drag on screen pad)."""
         with self._lock:
             if self._locked:
                 return
             self._position[0] = (nx - 0.5) * _SCREEN_X_SPAN
             self._position[1] = (0.5 - ny) * _SCREEN_Y_SPAN
+            self._touch()
 
     def set_depth_norm(self, nz: float) -> None:
-        """nz: 0 = far, 1 = near."""
+        """nz: 0 = far, 1 = near (same as depth / Z)."""
         with self._lock:
             if self._locked:
                 return
             nz = float(np.clip(nz, 0.0, 1.0))
             self._position[2] = _DEPTH_MIN + nz * (_DEPTH_MAX - _DEPTH_MIN)
+            self._touch()
 
     def depth_norm(self) -> float:
         with self._lock:
