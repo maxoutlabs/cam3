@@ -8,6 +8,7 @@ from model_state import ModelState
 
 _BG = "#2b2d30"
 _FG = "#e8e8e8"
+_TROUGH = "#505560"
 _RED = "#e05a5a"
 _GREEN = "#6ecf6e"
 _BLUE = "#5a9ee0"
@@ -22,17 +23,17 @@ class _LabeledScale(tk.Frame):
         to: float,
         value: float,
         on_change,
-        length: int = 300,
+        length: int = 320,
         color: str = _FG,
     ) -> None:
         super().__init__(parent, bg=_BG)
         self._on_change = on_change
         self._silent = True
-        tk.Label(self, text=label, bg=_BG, fg=color, font=("Segoe UI", 9)).pack(
+        tk.Label(self, text=label, bg=_BG, fg=color, font=("Segoe UI", 9, "bold")).pack(
             anchor=tk.W
         )
         self._var = tk.DoubleVar(value=value)
-        res = max((to - from_) / 120.0, 0.05)
+        res = max((to - from_) / 180.0, 0.1)
         self._scale = tk.Scale(
             self,
             from_=from_,
@@ -44,14 +45,16 @@ class _LabeledScale(tk.Frame):
             showvalue=True,
             bg=_BG,
             fg=_FG,
-            troughcolor="#40444b",
+            troughcolor=_TROUGH,
             activebackground=color,
             highlightthickness=0,
             sliderrelief=tk.RAISED,
+            sliderlength=22,
+            width=22,
             cursor="hand2",
             command=self._cmd,
         )
-        self._scale.pack(fill=tk.X, pady=(2, 8))
+        self._scale.pack(fill=tk.X, pady=(4, 10))
         self._silent = False
 
     def _cmd(self, value: str) -> None:
@@ -85,6 +88,7 @@ class MoveDepthControl(tk.Frame):
             lambda v: model.set_depth_norm(v / 100.0),
             color=_BLUE,
         )
+        self._depth.pack(fill=tk.X)
 
     def sync(self) -> None:
         self._depth.set(self._model.depth_norm() * 100.0)
@@ -111,6 +115,7 @@ class RotateControls(tk.Frame):
             lambda v: model.set_euler_axis("x", v),
             color=_RED,
         )
+        self._sx.pack(fill=tk.X)
         self._sy = _LabeledScale(
             self,
             "Turn Y",
@@ -120,6 +125,7 @@ class RotateControls(tk.Frame):
             lambda v: model.set_euler_axis("y", v),
             color=_GREEN,
         )
+        self._sy.pack(fill=tk.X)
         self._sz = _LabeledScale(
             self,
             "Roll Z",
@@ -129,6 +135,7 @@ class RotateControls(tk.Frame):
             lambda v: model.set_euler_axis("z", v),
             color=_BLUE,
         )
+        self._sz.pack(fill=tk.X)
 
     def sync(self) -> None:
         e = self._model.euler_deg
@@ -157,6 +164,7 @@ class ScaleControls(tk.Frame):
             lambda v: model.set_scale(v / 100.0),
             color=_BLUE,
         )
+        self._scale.pack(fill=tk.X)
 
     def sync(self) -> None:
         self._scale.set(self._model.scale * 100.0)

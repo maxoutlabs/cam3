@@ -60,10 +60,16 @@ class ModelState:
     ROT_DRAG_SENS = 0.45
     SCALE_DRAG_SENS = 0.004
 
+    # Display follows target each frame (see tick) for smooth motion on the feed.
+    _SMOOTH_RATE = 22.0
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._target_position = DEFAULT_POSITION.copy()
         self._position = DEFAULT_POSITION.copy()
+        self._target_euler = DEFAULT_EULER_DEG.copy()
         self._euler_deg = DEFAULT_EULER_DEG.copy()
+        self._target_scale = DEFAULT_SCALE
         self._scale = DEFAULT_SCALE
         self._locked = False
         self._mode = ControlMode.MOVE
@@ -72,6 +78,38 @@ class ModelState:
 
     def _touch(self) -> None:
         self._generation += 1
+
+    def tick(self, dt: float) -> bool:
+        """Interpolate display transform toward targets. Returns True if display moved."""
+        if dt <= 0:
+            return False
+        alpha = 1.0 - math.exp(-self._SMOOTH_RATE * dt)
+        changed = False
+        with self._lock:
+            new_pos = self._position + (self._target_position - self._position) * alpha
+            if float(np.linalg.norm(new_pos - self._position)) > 1e-5:
+                self._position = new_pos
+                changed = True
+
+            new_euler = self._euler_deg + (self._target_euler - self._euler_deg) * alpha
+            if float(np.linalg.norm(new_euler - self._euler_deg)) > 0.05:
+                self._euler_deg = new_euler
+                changed = True
+
+            if abs(self._scale - self._target_scale) > 1e-4:
+                self._scale += (self._target_scale - self._scale) * alpha
+                changed = True
+
+        if changed:
+            self._touch()
+        return changed
+
+    def screen_norm_from_target(self) -> tuple[float, float]:
+        """Pad dot follows drag target immediately."""
+        with self._lock:
+            nx = 0.5 + self._target_position[0] / _SCREEN_X_SPAN
+            ny = 0.5 - self._target_position[1] / _SCREEN_Y_SPAN
+            return float(np.clip(nx, 0.0, 1.0)), float(np.clip(ny, 0.0, 1.0))
 
     @property
     def generation(self) -> int:
@@ -103,34 +141,38 @@ class ModelState:
 
     def reset(self) -> None:
         with self._lock:
+            self._target_position = DEFAULT_POSITION.copy()
             self._position = DEFAULT_POSITION.copy()
+            self._target_euler = DEFAULT_EULER_DEG.copy()
             self._euler_deg = DEFAULT_EULER_DEG.copy()
+            self._target_scale = DEFAULT_SCALE
             self._scale = DEFAULT_SCALE
             self._touch()
 
     @property
     def euler_deg(self) -> np.ndarray:
+        """Target euler (matches sliders)."""
         with self._lock:
-            return self._euler_deg.copy()
+            return self._target_euler.copy()
 
     @property
     def scale(self) -> float:
         with self._lock:
-            return self._scale
+            return self._target_scale
 
     def set_euler_axis(self, axis: str, degrees: float) -> None:
         with self._lock:
             if self._locked:
                 return
             idx = {"x": 0, "y": 1, "z": 2}[axis]
-            self._euler_deg[idx] = float(degrees)
+            self._target_euler[idx] = float(degrees)
             self._touch()
 
     def set_scale(self, value: float) -> None:
         with self._lock:
             if self._locked:
                 return
-            self._scale = float(np.clip(value, self.SCALE_MIN, self.SCALE_MAX))
+            self._target_scale = float(np.clip(value, self.SCALE_MIN, self.SCALE_MAX))
             self._touch()
 
     def snapshot(self) -> TransformSnapshot:
@@ -155,8 +197,8 @@ class ModelState:
         with self._lock:
             if self._locked:
                 return
-            self._position[0] = (nx - 0.5) * _SCREEN_X_SPAN
-            self._position[1] = (0.5 - ny) * _SCREEN_Y_SPAN
+            self._target_position[0] = (nx - 0.5) * _SCREEN_X_SPAN
+            self._target_position[1] = (0.5 - ny) * _SCREEN_Y_SPAN
             self._touch()
 
     def set_depth_norm(self, nz: float) -> None:
@@ -165,13 +207,13 @@ class ModelState:
             if self._locked:
                 return
             nz = float(np.clip(nz, 0.0, 1.0))
-            self._position[2] = _DEPTH_MIN + nz * (_DEPTH_MAX - _DEPTH_MIN)
+            self._target_position[2] = _DEPTH_MIN + nz * (_DEPTH_MAX - _DEPTH_MIN)
             self._touch()
 
     def depth_norm(self) -> float:
         with self._lock:
             return float(
-                (self._position[2] - _DEPTH_MIN) / (_DEPTH_MAX - _DEPTH_MIN)
+                (self._target_position[2] - _DEPTH_MIN) / (_DEPTH_MAX - _DEPTH_MIN)
             )
 
     def nudge_move_screen(self, dx: int, dy: int, dz: int) -> None:
@@ -179,22 +221,23 @@ class ModelState:
             if self._locked:
                 return
             s = self.MOVE_STEP[self._step]
-            self._position[0] += dx * s
-            self._position[1] += dy * s
-            self._position[2] += dz * s
+            self._target_position[0] += dx * s
+            self._target_position[1] += dy * s
+            self._target_position[2] += dz * s
+            self._touch()
 
     def drag_move_axis(self, axis: str, delta_px: float, scale: float = 1.0) -> None:
-        """Drag along a gizmo axis (2D widget pixels → world)."""
         with self._lock:
             if self._locked:
                 return
             s = self.MOVE_STEP[self._step] * (delta_px / 40.0) * scale
             if axis == "x":
-                self._position[0] += s
+                self._target_position[0] += s
             elif axis == "y":
-                self._position[1] += s
+                self._target_position[1] += s
             elif axis == "z":
-                self._position[2] += s
+                self._target_position[2] += s
+            self._touch()
 
     def drag_rotate_axis(self, axis: str, delta_px: float) -> None:
         with self._lock:
@@ -202,16 +245,18 @@ class ModelState:
                 return
             s = self.ROT_STEP[self._step] * delta_px * self.ROT_DRAG_SENS
             idx = {"x": 0, "y": 1, "z": 2}[axis]
-            self._euler_deg[idx] += s
+            self._target_euler[idx] += s
+            self._touch()
 
     def drag_scale(self, delta_px: float) -> None:
         with self._lock:
             if self._locked:
                 return
-            self._scale = float(
+            self._target_scale = float(
                 np.clip(
-                    self._scale + delta_px * self.SCALE_DRAG_SENS,
+                    self._target_scale + delta_px * self.SCALE_DRAG_SENS,
                     self.SCALE_MIN,
                     self.SCALE_MAX,
                 )
             )
+            self._touch()

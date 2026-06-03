@@ -171,11 +171,19 @@ class CameraStreamer:
                     cam.fps,
                 )
 
+                frame_interval = 1.0 / max(self.fps, 1)
+                last_t = time.perf_counter()
+
                 while not self._stop.is_set():
                     ok, frame = self._cap.read()
                     if not ok or frame is None:
                         time.sleep(0.005)
                         continue
+
+                    now = time.perf_counter()
+                    dt = min(now - last_t, 0.1)
+                    last_t = now
+                    self.model.tick(dt)
 
                     gen = self.model.generation
                     snap = self.model.snapshot()

@@ -10,8 +10,8 @@ import pyrender
 import trimesh
 from pyrender.constants import RenderFlags
 
-# Render overlay at half resolution, upscale — much faster, still looks fine
-_RENDER_SCALE = 0.55
+# Off-screen render scale (lower = faster)
+_RENDER_SCALE = 0.48
 
 _BOX_EDGES = (
     (0, 1), (1, 2), (2, 3), (3, 0),
@@ -264,9 +264,17 @@ class Renderer:
             )
             self._cache_key = key
 
+        a = self._cache_alpha
+        bgr = self._cache_bgr
+        # In-place blend when frame is writable (avoids extra full-frame alloc).
+        if frame_bgr.flags.writeable:
+            out = frame_bgr
+            out[:] = np.clip(
+                out.astype(np.float32) * (1.0 - a) + bgr * a, 0, 255
+            ).astype(np.uint8)
+            return out
         bg = frame_bgr.astype(np.float32)
-        out = bg * (1.0 - self._cache_alpha) + self._cache_bgr * self._cache_alpha
-        return np.clip(out, 0, 255).astype(np.uint8)
+        return np.clip(bg * (1.0 - a) + bgr * a, 0, 255).astype(np.uint8)
 
     def close(self) -> None:
         self._clear_nodes()

@@ -88,7 +88,8 @@ class ControlsWindow:
             self._root = tk.Tk()
             self._root.title("Cam3 — Transform")
             self._root.configure(bg=_BG)
-            self._root.resizable(False, False)
+            self._root.resizable(True, False)
+            self._root.minsize(380, 200)
             self._root.attributes("-topmost", True)
             self._root.protocol("WM_DELETE_WINDOW", self._destroy)
 

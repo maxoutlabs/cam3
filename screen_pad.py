@@ -76,7 +76,7 @@ class ScreenPad(tk.Frame):
         c.create_text(w - 8, 10, text="R", fill="#666", font=("Segoe UI", 7))
         c.create_text(w // 2, 10, text="top", fill="#666", font=("Segoe UI", 7))
 
-        nx, ny = self._model.screen_norm_from_position()
+        nx, ny = self._model.screen_norm_from_target()
         if self._mirror_x:
             nx = 1.0 - nx
         px, py = nx * w, ny * h
