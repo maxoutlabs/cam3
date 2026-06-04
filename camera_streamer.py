@@ -16,6 +16,8 @@ from renderer import Renderer
 
 logger = logging.getLogger(__name__)
 
+_JOIN_TIMEOUT_S = 4.0
+
 
 class CameraStreamer:
     """Reads the physical webcam, composites 3D overlay, streams to virtual cam."""
@@ -76,17 +78,14 @@ class CameraStreamer:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        self._shutting_down = False
         self._stop.clear()
         self._thread = threading.Thread(
-            target=self._run, name="CameraStreamer", daemon=True
+            target=self._run, name="CameraStreamer", daemon=False
         )
         self._thread.start()
 
-    def stop(self) -> None:
-        if self._shutting_down:
-            return
-        self._shutting_down = True
-        self._stop.set()
+    def _release_capture(self) -> None:
         with self._lock:
             cap = self._cap
             self._cap = None
@@ -95,9 +94,36 @@ class CameraStreamer:
                 cap.release()
             except Exception:
                 pass
-        if self._thread:
-            self._thread.join(timeout=2.0)
-            self._thread = None
+
+    def _release_renderer(self) -> None:
+        with self._lock:
+            renderer = self._renderer
+            self._renderer = None
+        if renderer is not None:
+            try:
+                renderer.close()
+            except Exception:
+                logger.debug("Renderer close failed", exc_info=True)
+
+    def stop(self) -> None:
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self._stop.set()
+        self._release_capture()
+
+        thread = self._thread
+        if thread and thread.is_alive():
+            thread.join(timeout=_JOIN_TIMEOUT_S)
+
+        if thread and thread.is_alive():
+            logger.warning("Camera thread still running; releasing GL resources")
+            self._release_renderer()
+        else:
+            self._release_renderer()
+
+        self._thread = None
+        self._vcam = None
 
     def is_locked(self) -> bool:
         return self.model.locked
@@ -172,6 +198,8 @@ class CameraStreamer:
 
     def _run(self) -> None:
         try:
+            if self._stop.is_set():
+                return
             self._cap = self._open_capture()
             with self._lock:
                 self._renderer = Renderer(self.width, self.height)
@@ -198,7 +226,8 @@ class CameraStreamer:
                 last_t = time.perf_counter()
 
                 while not self._stop.is_set():
-                    cap = self._cap
+                    with self._lock:
+                        cap = self._cap
                     if cap is None:
                         break
                     ok, frame = cap.read()
@@ -217,8 +246,8 @@ class CameraStreamer:
                     snap = self.model.snapshot()
                     with self._lock:
                         renderer = self._renderer
-                        if renderer is None:
-                            continue
+                        if renderer is None or self._stop.is_set():
+                            break
 
                         fh, fw = frame.shape[:2]
                         if fw != renderer.width or fh != renderer.height:
@@ -236,16 +265,12 @@ class CameraStreamer:
                     cam.send(rgb)
                     cam.sleep_until_next_frame()
         except Exception:
-            logger.exception("Camera stream failed")
+            if not self._stop.is_set():
+                logger.exception("Camera stream failed")
         finally:
             self._cleanup()
 
     def _cleanup(self) -> None:
-        with self._lock:
-            if self._renderer:
-                self._renderer.close()
-                self._renderer = None
-        if self._cap:
-            self._cap.release()
-            self._cap = None
+        self._release_capture()
+        self._release_renderer()
         self._vcam = None

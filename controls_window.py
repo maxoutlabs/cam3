@@ -61,7 +61,7 @@ class ControlsWindow:
         self._thread = threading.Thread(target=self._run, name="ControlsUI", daemon=True)
         self._thread.start()
 
-    def shutdown(self, wait: bool = True, timeout: float = 1.5) -> None:
+    def shutdown(self, wait: bool = True, timeout: float = 2.5) -> None:
         """Quit Tk mainloop and tear down the UI thread."""
         root = self._root
         if root is not None:

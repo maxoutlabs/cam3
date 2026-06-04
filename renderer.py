@@ -292,4 +292,10 @@ class Renderer:
 
     def close(self) -> None:
         self._clear_nodes()
-        self._renderer.delete()
+        self._invalidate_cache()
+        if getattr(self, "_renderer", None) is not None:
+            try:
+                self._renderer.delete()
+            except Exception:
+                pass
+            self._renderer = None

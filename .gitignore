@@ -9,6 +9,11 @@ build/
 .env.*
 /refs
 
+_review/
+_review2/
+*.mp4
+Recording*.mp4
+
 models/*.glb
 models/*.gltf
 models/*.obj

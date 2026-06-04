@@ -6,6 +6,7 @@ Tray: pick a model, transform controls, lock/reset.
 from __future__ import annotations
 
 import argparse
+import atexit
 import logging
 import sys
 from pathlib import Path
@@ -47,7 +48,7 @@ class TrayApp:
         if self._exiting:
             return
         self._exiting = True
-        self._controls.shutdown(wait=True, timeout=2.0)
+        self._controls.shutdown(wait=True, timeout=3.0)
         self._streamer.stop()
 
     def _open_controls(self, _icon: Icon | None = None, _item=None) -> None:
@@ -260,6 +261,7 @@ def main() -> int:
         vcam_device=args.vcam_device,
     )
     app = TrayApp(streamer)
+    atexit.register(app.shutdown)
     try:
         app.run()
     except KeyboardInterrupt:
