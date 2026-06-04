@@ -250,8 +250,6 @@ def main() -> int:
         logger.error("Run with --check for details or --skip-env-check to try anyway.")
         return 1
 
-    logger.info("%s", platform_support.format_startup_help().replace("\n", " | "))
-
     streamer = CameraStreamer(
         camera_index=args.camera,
         width=args.width,

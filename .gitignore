@@ -1,22 +1,14 @@
-# Python
 .venv/
 __pycache__/
 *.py[cod]
-*$py.class
 *.egg-info/
 dist/
 build/
 
-# Local / secrets
 .env
 .env.*
 /refs
 
-# Downloaded or generated
-hand_landmarker.task
-*.task.download
-
-# 3D assets (add your own locally)
 models/*.glb
 models/*.gltf
 models/*.obj
@@ -24,4 +16,3 @@ models/*.obj
 *.gltf
 *.obj
 !models/.gitkeep
-!models/README.md

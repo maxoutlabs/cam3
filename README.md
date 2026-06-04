@@ -1,50 +1,32 @@
 <div align="center">
 
-<img src="hero.png" width="100%" alt="cam3 — 3D models on your webcam via a virtual camera" />
+<img src="hero.png" width="100%" alt="cam3" />
 
 # cam3
 
-**Drop a GLB on your webcam. Meet and Zoom see it on a virtual camera.**
+**GLB on your webcam. Virtual camera out to Meet and Zoom.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue?style=flat-square)](https://www.python.org/downloads/)
 [![Windows](https://img.shields.io/badge/Windows-✓-555?style=flat-square)]()
 [![macOS](https://img.shields.io/badge/macOS-✓-555?style=flat-square)]()
 [![Linux](https://img.shields.io/badge/Linux-✓-555?style=flat-square)]()
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-
-[Install](#install) · [Virtual camera](#virtual-camera-by-os) · [How it works](#how-it-works)
+[![MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 
 </div>
 
----
-
-Tray app for **Windows, macOS, and Linux**. Reads your webcam, renders a `.glb` / `.gltf` with [pyrender](https://github.com/mmatl/pyrender), outputs through a **virtual camera**. No browser extension. No Blender running in the background.
-
-The meeting feed stays clean. Nothing is drawn on the video except your model.
+Tray app. Webcam in, `.glb` composited with [pyrender](https://github.com/mmatl/pyrender), [pyvirtualcam](https://github.com/letmaik/pyvirtualcam) out. **Left-click** the tray icon for move / rotate / scale. No gizmo on the video feed.
 
 ---
 
-## How it works
+## Virtual camera
 
-```
-Webcam  →  OpenCV  →  pyrender overlay  →  pyvirtualcam  →  virtual cam  →  Meet / Zoom / Teams
-```
+| OS | Setup once |
+|----|------------|
+| **Windows** | [OBS](https://obsproject.com/) 28+: Start Virtual Camera, stop, close OBS. Pick **OBS Virtual Camera** in Meet. |
+| **macOS** | Same (OBS 30+ on macOS 13+). |
+| **Linux** | `sudo apt install v4l2loopback-dkms` then `sudo modprobe v4l2loopback devices=1 exclusive_caps=1 card_label=cam3` or run `scripts/setup-linux-vcam.sh`. Pick the loopback device in Meet. |
 
-**Transform panel:** screen pad (drag the dot) plus sliders for depth, rotation, and scale. No second camera preview in the panel.
-
----
-
-## Virtual camera by OS
-
-| OS | What cam3 uses | One-time setup |
-|----|----------------|----------------|
-| **Windows** | OBS Virtual Camera | Install [OBS](https://obsproject.com/) 28+. Start Virtual Camera, stop it, close OBS. |
-| **macOS** | OBS Virtual Camera | OBS 28+ (OBS 30+ on macOS 13+). Same start/stop once, quit OBS. |
-| **Linux** | [v4l2loopback](https://github.com/umlaeute/v4l2loopback) | See below. |
-
-In your meeting app, pick the **virtual** camera (OBS Virtual Camera on Win/Mac, or the loopback device on Linux), not your physical webcam.
-
-If the feed is mirrored, the screen pad mirrors too (`CAM3_MIRROR=0` to disable).
+`CAM3_MIRROR=0` if drag-left on the pad does not match the feed.
 
 ---
 
@@ -56,116 +38,36 @@ cd cam3
 python -m venv .venv
 ```
 
-**Windows (PowerShell)**
+**Windows:** `.\.venv\Scripts\Activate.ps1`  
+**macOS / Linux:** `source .venv/bin/activate`
 
-```powershell
-.\.venv\Scripts\Activate.ps1
+```bash
 pip install -r requirements.txt
 python main.py --check
 python main.py
 ```
 
-**macOS / Linux**
-
 ```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py --check
-python main.py
+python main.py --model models/foo.glb
+python main.py --list-cameras
+python main.py --camera 1
+python main.py --vcam-device /dev/video10   # Linux
 ```
 
-Tray icon: **left-click** opens transform controls.
-
-**Useful flags**
-
-```bash
-python main.py --list-cameras          # find webcam index
-python main.py --camera 1              # non-default webcam
-python main.py --model path/to/model.glb
-python main.py --vcam-device /dev/video10   # Linux loopback path
-python main.py --check                 # OS setup summary
-```
-
----
-
-## Linux setup
-
-```bash
-# Debian/Ubuntu helper (modprobe + apt packages)
-chmod +x scripts/setup-linux-vcam.sh
-./scripts/setup-linux-vcam.sh
-```
-
-Or manually:
-
-```bash
-sudo apt install v4l2loopback-dkms v4l-utils
-sudo modprobe v4l2loopback devices=1 exclusive_caps=1 card_label=cam3
-python main.py --check
-```
-
-Pick the **cam3** / loopback device in Meet or Zoom.
-
-**OpenGL (3D render):** On a desktop session, defaults usually work. Headless or Wayland issues:
-
-```bash
-export CAM3_GL=egl      # GPU offscreen (needs EGL libs)
-# or
-export CAM3_GL=osmesa   # CPU offscreen (sudo apt install libosmesa6-dev)
-```
+Headless Linux 3D: `export CAM3_GL=egl` or `CAM3_GL=osmesa`.
 
 ---
 
 ## Tray
 
-| Action | What it does |
-|--------|----------------|
-| **Transform controls** | Move / rotate / scale panel |
-| **Wireframe cube** | Default cyan box at startup |
-| **Load model** | `.glb` / `.gltf` from `models/` or repo root |
+| | |
+|--|--|
+| **Transform controls** | Panel |
+| **Load model** | `.glb` / `.gltf` in `models/` (refresh list after adding files) |
+| **Wireframe cube** | Default at startup |
 | **None** | Webcam only |
-| **Lock model** | Freeze transform |
-| **Reset position** | Center and default rotation/scale |
+| **Lock / Reset** | Freeze or center |
 | **Exit** | Quit |
-
-Add files under [`models/`](models/), then **Load model → Refresh list**.
-
----
-
-## Transform panel
-
-| Tab | Controls |
-|-----|----------|
-| **Move** | Screen pad + depth slider |
-| **Rotate** | Tilt X, Turn Y, Roll Z |
-| **Scale** | Size |
-
----
-
-## Models
-
-Multi-part GLBs keep scene transforms (no more mashed geometry). Use models you have the right to use.
-
----
-
-## Layout
-
-```
-cam3/
-├── main.py
-├── platform_support.py   # OS webcam + virtual cam + GL
-├── camera_streamer.py
-├── renderer.py
-├── controls_window.py
-├── scripts/setup-linux-vcam.sh
-└── models/
-```
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
