@@ -79,6 +79,7 @@ Linux headless 3D: `export CAM3_GL=egl` or `CAM3_GL=osmesa`
 ## Demo Video
 https://github.com/user-attachments/assets/ed5ec5f0-992d-4e70-b9b9-8d303d619f63
 
+###### _Demo model: V1 from ULTRAKILL on Sketchfab (CC BY). Character by Hakita / New Blood Interactive. Not included in the repo.<br>https://sketchfab.com/3d-models/v1-ultrakill-d951a08a8f50412d84e262bad887b285_
 ---
 
 ## License
