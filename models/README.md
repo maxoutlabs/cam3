@@ -1,5 +1,7 @@
 # Models
 
-Place your `.glb` or `.gltf` files here. They appear under **Load model** in the tray menu.
+Drop `.glb` or `.gltf` files here. Tray → **Load model → Refresh list**.
 
-Only use models you have the right to use and share.
+Free samples: [Kenney](https://kenney.nl/assets), [Poly Pizza](https://poly.pizza/), or export from Blender (glTF).
+
+Use only models you have the right to use.

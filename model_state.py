@@ -26,6 +26,25 @@ class ControlMode(str, Enum):
     SCALE = "scale"
 
 
+def _slerp_quat(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
+    q0 = q0.astype(np.float64)
+    q1 = q1.astype(np.float64)
+    q0 /= max(np.linalg.norm(q0), 1e-12)
+    q1 /= max(np.linalg.norm(q1), 1e-12)
+    dot = float(np.clip(np.dot(q0, q1), -1.0, 1.0))
+    if dot < 0.0:
+        q1 = -q1
+        dot = -dot
+    if dot > 0.9995:
+        out = q0 + t * (q1 - q0)
+        return out / max(np.linalg.norm(out), 1e-12)
+    theta = math.acos(dot)
+    s = math.sin(theta)
+    w0 = math.sin((1.0 - t) * theta) / s
+    w1 = math.sin(t * theta) / s
+    return w0 * q0 + w1 * q1
+
+
 def euler_xyz_deg_to_quat(euler_deg: np.ndarray) -> np.ndarray:
     ex, ey, ez = np.radians(euler_deg.astype(np.float64))
     cx, sx = math.cos(ex * 0.5), math.sin(ex * 0.5)
@@ -63,7 +82,8 @@ class ModelState:
         self._target_position = DEFAULT_POSITION.copy()
         self._position = DEFAULT_POSITION.copy()
         self._target_euler = DEFAULT_EULER_DEG.copy()
-        self._euler_deg = DEFAULT_EULER_DEG.copy()
+        self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
+        self._display_quat = self._target_quat.copy()
         self._target_scale = DEFAULT_SCALE
         self._scale = DEFAULT_SCALE
         self._locked = False
@@ -85,9 +105,9 @@ class ModelState:
                 self._position = new_pos
                 changed = True
 
-            new_euler = self._euler_deg + (self._target_euler - self._euler_deg) * alpha
-            if float(np.linalg.norm(new_euler - self._euler_deg)) > 0.05:
-                self._euler_deg = new_euler
+            new_quat = _slerp_quat(self._display_quat, self._target_quat, alpha)
+            if float(np.linalg.norm(new_quat - self._display_quat)) > 1e-5:
+                self._display_quat = new_quat
                 changed = True
 
             if abs(self._scale - self._target_scale) > 1e-4:
@@ -133,7 +153,8 @@ class ModelState:
             self._target_position = DEFAULT_POSITION.copy()
             self._position = DEFAULT_POSITION.copy()
             self._target_euler = DEFAULT_EULER_DEG.copy()
-            self._euler_deg = DEFAULT_EULER_DEG.copy()
+            self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
+            self._display_quat = self._target_quat.copy()
             self._target_scale = DEFAULT_SCALE
             self._scale = DEFAULT_SCALE
             self._touch()
@@ -155,6 +176,7 @@ class ModelState:
                 return
             idx = {"x": 0, "y": 1, "z": 2}[axis]
             self._target_euler[idx] = float(degrees)
+            self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
             self._touch()
 
     def set_scale(self, value: float) -> None:
@@ -168,7 +190,7 @@ class ModelState:
         with self._lock:
             return TransformSnapshot(
                 position=self._position.copy(),
-                rotation=euler_xyz_deg_to_quat(self._euler_deg),
+                rotation=self._display_quat.copy(),
                 scale=self._scale,
                 mode=self._mode,
                 locked=self._locked,

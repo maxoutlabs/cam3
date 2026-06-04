@@ -35,10 +35,12 @@ def _quat_to_matrix(quat_xyzw: np.ndarray) -> np.ndarray:
 
 
 def _model_matrix(position: np.ndarray, rotation_quat: np.ndarray, scale: float) -> np.ndarray:
-    m = _quat_to_matrix(rotation_quat)
-    m[:3, 3] = position
-    m[:3, :3] *= float(scale)
-    return m
+    s = float(scale)
+    r = _quat_to_matrix(rotation_quat)
+    t = np.eye(4, dtype=np.float64)
+    t[:3, :3] = r[:3, :3] * s
+    t[:3, 3] = position
+    return t
 
 
 def _wireframe_box(size: float = 0.65, edge_radius: float = 0.012) -> trimesh.Trimesh:
@@ -66,12 +68,15 @@ def _wireframe_box(size: float = 0.65, edge_radius: float = 0.012) -> trimesh.Tr
     return trimesh.util.concatenate(parts)
 
 
-def _normalize_mesh(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+def _prepare_mesh(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Center and uniform-scale to unit size. Proportions stay intact."""
     mesh = mesh.copy()
     mesh.apply_translation(-mesh.centroid)
     extent = float(np.max(mesh.extents))
     if extent > 1e-6:
         mesh.apply_scale(1.0 / extent)
+    if mesh.vertex_normals is None or len(mesh.vertex_normals) != len(mesh.vertices):
+        mesh.fix_normals()
     return mesh
 
 
@@ -80,24 +85,19 @@ def _load_mesh_file(path: str | Path) -> trimesh.Trimesh:
     if not p.is_file():
         raise FileNotFoundError(f"Model not found: {path}")
 
-    suffix = p.suffix.lower()
     try:
-        loaded = trimesh.load(str(p), force=None)
+        loaded = trimesh.load(str(p), force="scene")
     except Exception:
         loaded = trimesh.load(str(p))
 
     if isinstance(loaded, trimesh.Scene):
-        meshes = [
-            g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)
-        ]
-        if not meshes:
+        mesh = loaded.to_geometry()
+        if mesh is None or not isinstance(mesh, trimesh.Trimesh):
             raise ValueError(f"No mesh in {path}")
-        if len(meshes) == 1:
-            return _normalize_mesh(meshes[0])
-        return _normalize_mesh(trimesh.util.concatenate(meshes))
+        return _prepare_mesh(mesh)
 
     if isinstance(loaded, trimesh.Trimesh):
-        return _normalize_mesh(loaded)
+        return _prepare_mesh(loaded)
 
     raise ValueError(f"Unsupported file: {path}")
 
@@ -191,7 +191,7 @@ class Renderer:
     def set_model(self, path: str | Path) -> None:
         self._clear_nodes()
         mesh = _load_mesh_file(path)
-        pr = pyrender.Mesh.from_trimesh(mesh, smooth=True)
+        pr = pyrender.Mesh.from_trimesh(mesh, smooth=not mesh.is_watertight)
         node = pyrender.Node(mesh=pr, matrix=np.eye(4))
         self._scene.add_node(node)
         self._nodes.append(node)
