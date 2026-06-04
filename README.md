@@ -76,6 +76,13 @@ Linux headless 3D: `export CAM3_GL=egl` or `CAM3_GL=osmesa`
 
 ---
 
+## Demo Video
+<video src="demo.mp4" controls autoplay loop style="max-width: 100%; height: auto;">
+  Your browser does not support the video tag.
+</video>
+
+---
+
 ## License
 
 [MIT](LICENSE) © [Aadi Joshi](https://github.com/aadi-joshi)
