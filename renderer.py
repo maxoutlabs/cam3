@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import platform_support
+
+platform_support.configure_opengl_environment()
+
 import cv2
 import numpy as np
 import pyrender
@@ -131,11 +135,21 @@ class Renderer:
         rh = max(64, int(height * _RENDER_SCALE))
         self._render_w = rw
         self._render_h = rh
-        self._renderer = pyrender.OffscreenRenderer(rw, rh)
+        self._renderer = self._create_offscreen_renderer(rw, rh)
 
         self._cache_key: tuple | None = None
         self._cache_bgr: np.ndarray | None = None
         self._cache_alpha: np.ndarray | None = None
+
+    @staticmethod
+    def _create_offscreen_renderer(width: int, height: int) -> pyrender.OffscreenRenderer:
+        try:
+            return pyrender.OffscreenRenderer(width, height)
+        except Exception as exc:
+            hint = platform_support.platform_info().opengl_hint
+            raise RuntimeError(
+                f"Could not create OpenGL renderer ({exc}). {hint}"
+            ) from exc
 
     def _add_camera(self) -> None:
         cam = pyrender.PerspectiveCamera(yfov=self._YFOV, aspectRatio=self._aspect)
@@ -208,7 +222,7 @@ class Renderer:
         self._render_w = max(64, int(width * _RENDER_SCALE))
         self._render_h = max(64, int(height * _RENDER_SCALE))
         self._renderer.delete()
-        self._renderer = pyrender.OffscreenRenderer(self._render_w, self._render_h)
+        self._renderer = self._create_offscreen_renderer(self._render_w, self._render_h)
         self._add_camera()
         self._invalidate_cache()
 

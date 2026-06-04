@@ -9,8 +9,8 @@ from pathlib import Path
 
 import cv2
 import pyvirtualcam
-from pyvirtualcam import PixelFormat
 
+import platform_support
 from model_state import ModelState
 from renderer import Renderer
 
@@ -28,6 +28,7 @@ class CameraStreamer:
         fps: int = 30,
         model_path: str | Path | None = None,
         virtual_camera: str | None = None,
+        vcam_device: str | None = None,
         start_with_cube: bool = True,
     ) -> None:
         self.camera_index = camera_index
@@ -35,6 +36,7 @@ class CameraStreamer:
         self.height = height
         self.fps = fps
         self.virtual_camera = virtual_camera
+        self.vcam_device = vcam_device
         self.start_with_cube = start_with_cube
         self.model = ModelState()
 
@@ -134,24 +136,39 @@ class CameraStreamer:
             logger.info("Model cleared (camera only)")
 
     def _open_capture(self) -> cv2.VideoCapture:
-        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+        cap = platform_support.create_video_capture(self.camera_index)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, self.fps)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if platform_support.current_os() == platform_support.OS.WINDOWS:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not cap.isOpened():
             cap.release()
-            cap = cv2.VideoCapture(self.camera_index)
-        if not cap.isOpened():
             raise RuntimeError(
                 f"Could not open webcam index {self.camera_index}. "
-                "Close other apps using the camera and try again."
+                "Try --list-cameras or another --camera index."
             )
         actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.width = actual_w if actual_w > 0 else self.width
         self.height = actual_h if actual_h > 0 else self.height
         return cap
+
+    def _open_virtual_camera(self) -> pyvirtualcam.Camera:
+        kwargs = platform_support.build_virtual_camera_kwargs(
+            self.width,
+            self.height,
+            self.fps,
+            backend=self.virtual_camera,
+            device=self.vcam_device,
+        )
+        try:
+            return pyvirtualcam.Camera(**kwargs)
+        except Exception as exc:
+            hint = platform_support.platform_info().virtual_camera_hint
+            raise RuntimeError(
+                f"Could not open virtual camera: {exc}\n{hint}"
+            ) from exc
 
     def _run(self) -> None:
         try:
@@ -168,16 +185,7 @@ class CameraStreamer:
                 elif self.start_with_cube:
                     self._renderer.load_default_cube()
 
-            vcam_kwargs: dict = {
-                "width": self.width,
-                "height": self.height,
-                "fps": self.fps,
-                "fmt": PixelFormat.RGB,
-            }
-            if self.virtual_camera:
-                vcam_kwargs["backend"] = self.virtual_camera
-
-            with pyvirtualcam.Camera(**vcam_kwargs) as cam:
+            with self._open_virtual_camera() as cam:
                 self._vcam = cam
                 logger.info(
                     "Virtual camera: %s (%sx%s @ %sfps)",
@@ -187,7 +195,6 @@ class CameraStreamer:
                     cam.fps,
                 )
 
-                frame_interval = 1.0 / max(self.fps, 1)
                 last_t = time.perf_counter()
 
                 while not self._stop.is_set():

@@ -4,18 +4,26 @@ Thanks for looking at cam3.
 
 ## Setup
 
-Same as the README: venv, `pip install -r requirements.txt`, `python main.py`. OBS Virtual Camera must be set up once on Windows.
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python main.py --check
+python main.py
+```
+
+Virtual camera must work on your OS before testing (OBS on Windows/macOS, v4l2loopback on Linux).
 
 ## Pull requests
 
 - One logical change per PR when you can.
-- Match existing style (minimal deps, no extra frameworks).
-- Test on Windows with a real webcam and OBS Virtual Camera before opening.
+- Test on the OS you changed (webcam + virtual cam + load a small `.glb`).
+- Keep dependencies minimal.
 
 ## Issues
 
-Include OS version, Python version, and what you expected vs what happened. For model bugs, say which `.glb` (or a similar public sample) and whether it looks wrong on load or only when rotating.
+Include OS, Python version, output of `python main.py --check`, and whether the bug is on load or when moving the model.
 
 ## Scope
 
-cam3 is intentionally small. Features that add heavy runtimes, always-on network calls, or a full 3D editor belong in other tools, not here.
+Small tray tool. No full editor, cloud accounts, or heavy ML stacks in core.

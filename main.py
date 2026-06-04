@@ -13,6 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from pystray import Icon, Menu, MenuItem
 
+import platform_support
 from camera_streamer import CameraStreamer
 from controls_window import ControlsWindow
 from model_catalog import discover_models, ensure_models_folder
@@ -178,7 +179,7 @@ class TrayApp:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="3D virtual webcam with tray controls")
-    p.add_argument("--camera", type=int, default=0)
+    p.add_argument("--camera", type=int, default=0, help="Webcam device index")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--fps", type=int, default=30)
@@ -186,14 +187,71 @@ def parse_args() -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        help="Optional: load this .glb at startup (otherwise pick from tray)",
+        help="Optional: load this .glb at startup",
     )
-    p.add_argument("--vcam-backend", type=str, default=None)
+    p.add_argument(
+        "--vcam-backend",
+        type=str,
+        default=None,
+        help="Virtual camera backend (obs on Windows/macOS)",
+    )
+    p.add_argument(
+        "--vcam-device",
+        type=str,
+        default=None,
+        help="Virtual camera device path (Linux v4l2loopback, e.g. /dev/video10)",
+    )
+    p.add_argument(
+        "--list-cameras",
+        action="store_true",
+        help="Print webcam indices that respond and exit",
+    )
+    p.add_argument(
+        "--check",
+        action="store_true",
+        help="Print platform setup notes and exit",
+    )
+    p.add_argument(
+        "--skip-env-check",
+        action="store_true",
+        help="Start even if virtual camera prerequisites look missing",
+    )
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+
+    if args.check:
+        print(platform_support.format_startup_help())
+        issues = platform_support.check_environment()
+        if issues:
+            print("\nIssues:")
+            for line in issues:
+                print(f"  - {line}")
+            return 1
+        print("\nEnvironment check passed.")
+        return 0
+
+    if args.list_cameras:
+        indices = platform_support.list_webcam_indices()
+        if indices:
+            print("Webcam indices:", ", ".join(str(i) for i in indices))
+        else:
+            print("No webcams found. Check permissions and drivers.")
+        return 0 if indices else 1
+
+    issues = platform_support.check_environment()
+    if issues and not args.skip_env_check:
+        logger.error("Virtual camera is not ready:")
+        for line in issues:
+            logger.error("  %s", line)
+        logger.error("%s", platform_support.format_startup_help())
+        logger.error("Run with --check for details or --skip-env-check to try anyway.")
+        return 1
+
+    logger.info("%s", platform_support.format_startup_help().replace("\n", " | "))
+
     streamer = CameraStreamer(
         camera_index=args.camera,
         width=args.width,
@@ -201,6 +259,7 @@ def main() -> int:
         fps=args.fps,
         model_path=args.model,
         virtual_camera=args.vcam_backend,
+        vcam_device=args.vcam_device,
     )
     app = TrayApp(streamer)
     try:

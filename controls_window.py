@@ -8,6 +8,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
+import platform_support
+
 from drag_controls import MoveDepthControl, RotateControls, ScaleControls
 from model_state import ControlMode, ModelState
 from screen_pad import ScreenPad
@@ -115,7 +117,8 @@ class ControlsWindow:
             self._root.configure(bg=_BG)
             self._root.resizable(True, False)
             self._root.minsize(380, 200)
-            self._root.attributes("-topmost", True)
+            if platform_support.current_os() != platform_support.OS.MACOS:
+                self._root.attributes("-topmost", True)
             self._root.protocol("WM_DELETE_WINDOW", self._quit_on_main)
 
             style = ttk.Style(self._root)
@@ -179,7 +182,11 @@ class ControlsWindow:
             w.destroy()
 
         if mode == ControlMode.MOVE:
-            self._pad = ScreenPad(self._body, self._model, mirror_x=True)
+            self._pad = ScreenPad(
+                self._body,
+                self._model,
+                mirror_x=platform_support.default_screen_mirror(),
+            )
             self._pad.pack()
             self._move_extra = MoveDepthControl(self._body, self._model)
             self._move_extra.pack(fill=tk.X)

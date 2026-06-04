@@ -1,47 +1,50 @@
 <div align="center">
 
-<img src="hero.png" width="100%" alt="cam3 — 3D models on your webcam via OBS Virtual Camera" />
+<img src="hero.png" width="100%" alt="cam3 — 3D models on your webcam via a virtual camera" />
 
 # cam3
 
-**Drop a GLB on your webcam. Zoom and Meet see it on OBS Virtual Camera.**
+**Drop a GLB on your webcam. Meet and Zoom see it on a virtual camera.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue?style=flat-square)](https://www.python.org/downloads/)
-[![Windows](https://img.shields.io/badge/platform-Windows-555?style=flat-square)]()
+[![Windows](https://img.shields.io/badge/Windows-✓-555?style=flat-square)]()
+[![macOS](https://img.shields.io/badge/macOS-✓-555?style=flat-square)]()
+[![Linux](https://img.shields.io/badge/Linux-✓-555?style=flat-square)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-[Quick start](#install) · [How it works](#how-it-works) · [Models](#models)
+[Install](#install) · [Virtual camera](#virtual-camera-by-os) · [How it works](#how-it-works)
 
 </div>
 
 ---
 
-cam3 is a small Windows tray app. It reads your webcam, renders a `.glb` / `.gltf` on top with [pyrender](https://github.com/mmatl/pyrender), and sends the result to **OBS Virtual Camera**. No browser extension. No Unity or Blender running in the background.
+Tray app for **Windows, macOS, and Linux**. Reads your webcam, renders a `.glb` / `.gltf` with [pyrender](https://github.com/mmatl/pyrender), outputs through a **virtual camera**. No browser extension. No Blender running in the background.
 
 The meeting feed stays clean. Nothing is drawn on the video except your model.
-
-> **Demo tip:** Record a 10s clip (tray → load model → drag the screen pad → rotate in Meet). GIF in the README beats a wall of text.
 
 ---
 
 ## How it works
 
 ```
-Webcam  →  OpenCV  →  pyrender overlay  →  pyvirtualcam  →  OBS Virtual Camera  →  Meet / Zoom / Teams
+Webcam  →  OpenCV  →  pyrender overlay  →  pyvirtualcam  →  virtual cam  →  Meet / Zoom / Teams
 ```
 
-You control placement from a separate panel: a **screen pad** (drag the dot) plus sliders for depth, rotation, and scale. The panel does not embed a second camera preview, so it stays light.
+**Transform panel:** screen pad (drag the dot) plus sliders for depth, rotation, and scale. No second camera preview in the panel.
 
 ---
 
-## What you need
+## Virtual camera by OS
 
-- Windows 10/11, Python 3.10+, a webcam
-- [OBS Studio](https://obsproject.com/) 28+ (built-in virtual camera)
+| OS | What cam3 uses | One-time setup |
+|----|----------------|----------------|
+| **Windows** | OBS Virtual Camera | Install [OBS](https://obsproject.com/) 28+. Start Virtual Camera, stop it, close OBS. |
+| **macOS** | OBS Virtual Camera | OBS 28+ (OBS 30+ on macOS 13+). Same start/stop once, quit OBS. |
+| **Linux** | [v4l2loopback](https://github.com/umlaeute/v4l2loopback) | See below. |
 
-**OBS once:** install OBS → **Start Virtual Camera** → **Stop Virtual Camera** → close OBS. In your meeting app, choose **OBS Virtual Camera**.
+In your meeting app, pick the **virtual** camera (OBS Virtual Camera on Win/Mac, or the loopback device on Linux), not your physical webcam.
 
-If OBS mirrors your camera, the screen pad mirrors too (drag-left = left on the feed).
+If the feed is mirrored, the screen pad mirrors too (`CAM3_MIRROR=0` to disable).
 
 ---
 
@@ -51,17 +54,64 @@ If OBS mirrors your camera, the screen pad mirrors too (drag-left = left on the 
 git clone https://github.com/aadi-joshi/cam3.git
 cd cam3
 python -m venv .venv
+```
+
+**Windows (PowerShell)**
+
+```powershell
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+python main.py --check
 python main.py
 ```
 
-Tray icon appears. **Left-click** opens transform controls.
-
-Optional: load a model at startup:
+**macOS / Linux**
 
 ```bash
-python main.py --model path\to\model.glb
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py --check
+python main.py
+```
+
+Tray icon: **left-click** opens transform controls.
+
+**Useful flags**
+
+```bash
+python main.py --list-cameras          # find webcam index
+python main.py --camera 1              # non-default webcam
+python main.py --model path/to/model.glb
+python main.py --vcam-device /dev/video10   # Linux loopback path
+python main.py --check                 # OS setup summary
+```
+
+---
+
+## Linux setup
+
+```bash
+# Debian/Ubuntu helper (modprobe + apt packages)
+chmod +x scripts/setup-linux-vcam.sh
+./scripts/setup-linux-vcam.sh
+```
+
+Or manually:
+
+```bash
+sudo apt install v4l2loopback-dkms v4l-utils
+sudo modprobe v4l2loopback devices=1 exclusive_caps=1 card_label=cam3
+python main.py --check
+```
+
+Pick the **cam3** / loopback device in Meet or Zoom.
+
+**OpenGL (3D render):** On a desktop session, defaults usually work. Headless or Wayland issues:
+
+```bash
+export CAM3_GL=egl      # GPU offscreen (needs EGL libs)
+# or
+export CAM3_GL=osmesa   # CPU offscreen (sudo apt install libosmesa6-dev)
 ```
 
 ---
@@ -72,11 +122,13 @@ python main.py --model path\to\model.glb
 |--------|----------------|
 | **Transform controls** | Move / rotate / scale panel |
 | **Wireframe cube** | Default cyan box at startup |
-| **Load model** | Pick `.glb` / `.gltf` from `models/` or repo root |
+| **Load model** | `.glb` / `.gltf` from `models/` or repo root |
 | **None** | Webcam only |
 | **Lock model** | Freeze transform |
 | **Reset position** | Center and default rotation/scale |
 | **Exit** | Quit |
+
+Add files under [`models/`](models/), then **Load model → Refresh list**.
 
 ---
 
@@ -84,7 +136,7 @@ python main.py --model path\to\model.glb
 
 | Tab | Controls |
 |-----|----------|
-| **Move** | Screen pad + depth slider (near/far along the camera) |
+| **Move** | Screen pad + depth slider |
 | **Rotate** | Tilt X, Turn Y, Roll Z |
 | **Scale** | Size |
 
@@ -92,32 +144,28 @@ python main.py --model path\to\model.glb
 
 ## Models
 
-Put files in [`models/`](models/), then tray → **Load model → Refresh list**.
-
-Multi-part GLBs are merged with scene transforms applied, so rigs and props stay in one piece. Use models you have the right to use.
+Multi-part GLBs keep scene transforms (no more mashed geometry). Use models you have the right to use.
 
 ---
 
-## Project layout
+## Layout
 
 ```
 cam3/
 ├── main.py
+├── platform_support.py   # OS webcam + virtual cam + GL
 ├── camera_streamer.py
 ├── renderer.py
 ├── controls_window.py
-├── screen_pad.py
-├── drag_controls.py
-├── model_catalog.py
-├── models/
-└── requirements.txt
+├── scripts/setup-linux-vcam.sh
+└── models/
 ```
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Keep changes small and focused.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
