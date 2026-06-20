@@ -59,6 +59,13 @@ def _slerp_quat(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
     return w0 * q0 + w1 * q1
 
 
+def normalize_euler_deg(euler_deg: np.ndarray) -> np.ndarray:
+    out = euler_deg.astype(np.float64).copy()
+    for i in range(3):
+        out[i] = ((out[i] + 180.0) % 360.0) - 180.0
+    return out
+
+
 def euler_xyz_deg_to_quat(euler_deg: np.ndarray) -> np.ndarray:
     ex, ey, ez = np.radians(euler_deg.astype(np.float64))
     cx, sx = math.cos(ex * 0.5), math.sin(ex * 0.5)
@@ -109,6 +116,14 @@ class ModelState:
     def _touch(self) -> None:
         self._generation += 1
 
+    def _pause_animation_from_manual_edit(self) -> None:
+        if not self._animation.enabled:
+            return
+        self._animation.enabled = False
+        self._animation.time_sec = 0.0
+        self._target_euler = normalize_euler_deg(self._target_euler)
+        self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
+
     def tick(self, dt: float) -> bool:
         """Interpolate display transform toward targets. Returns True if display moved."""
         if dt <= 0:
@@ -116,8 +131,11 @@ class ModelState:
         alpha = 1.0 - math.exp(-self._SMOOTH_RATE * dt)
         changed = False
         with self._lock:
-            if self._animation.enabled and not self._locked:
+            animating = self._animation.enabled and not self._locked
+            if animating:
                 self._animation.time_sec += dt
+                if self._animation.time_sec > 86400.0:
+                    self._animation.time_sec %= 3600.0
                 out = evaluate_animation(
                     self._animation,
                     self._anim_base,
@@ -128,20 +146,24 @@ class ModelState:
                 self._target_euler = out.euler_deg.copy()
                 self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
                 self._target_scale = out.scale
+                self._position = self._target_position.copy()
+                self._display_quat = self._target_quat.copy()
+                self._scale = self._target_scale
                 changed = True
-            new_pos = self._position + (self._target_position - self._position) * alpha
-            if float(np.linalg.norm(new_pos - self._position)) > 1e-5:
-                self._position = new_pos
-                changed = True
+            else:
+                new_pos = self._position + (self._target_position - self._position) * alpha
+                if float(np.linalg.norm(new_pos - self._position)) > 1e-5:
+                    self._position = new_pos
+                    changed = True
 
-            new_quat = _slerp_quat(self._display_quat, self._target_quat, alpha)
-            if float(np.linalg.norm(new_quat - self._display_quat)) > 1e-5:
-                self._display_quat = new_quat
-                changed = True
+                new_quat = _slerp_quat(self._display_quat, self._target_quat, alpha)
+                if float(np.linalg.norm(new_quat - self._display_quat)) > 1e-5:
+                    self._display_quat = new_quat
+                    changed = True
 
-            if abs(self._scale - self._target_scale) > 1e-4:
-                self._scale += (self._target_scale - self._scale) * alpha
-                changed = True
+                if abs(self._scale - self._target_scale) > 1e-4:
+                    self._scale += (self._target_scale - self._scale) * alpha
+                    changed = True
 
         if changed:
             self._touch()
@@ -193,9 +215,11 @@ class ModelState:
     def capture_animation_base(self) -> None:
         """Anchor animation to the current manual pose."""
         with self._lock:
+            if self._locked:
+                return
             self._anim_base = AnimationBase(
                 position=self._target_position.copy(),
-                euler_deg=self._target_euler.copy(),
+                euler_deg=normalize_euler_deg(self._target_euler),
                 scale=self._target_scale,
             )
             self._animation.time_sec = 0.0
@@ -205,19 +229,20 @@ class ModelState:
         with self._lock:
             return copy_config(self._animation)
 
-    def set_animation_enabled(self, enabled: bool) -> None:
+    def set_animation_enabled(self, enabled: bool) -> bool:
         with self._lock:
             if self._locked:
-                return
+                return False
             if enabled and not self._animation.enabled:
                 self._anim_base = AnimationBase(
                     position=self._target_position.copy(),
-                    euler_deg=self._target_euler.copy(),
+                    euler_deg=normalize_euler_deg(self._target_euler),
                     scale=self._target_scale,
                 )
                 self._animation.time_sec = 0.0
             self._animation.enabled = enabled
             self._touch()
+            return True
 
     def set_animation_preset(self, preset: AnimationPreset) -> None:
         with self._lock:
@@ -295,8 +320,7 @@ class ModelState:
             idx = {"x": 0, "y": 1, "z": 2}[axis]
             self._target_euler[idx] = float(degrees)
             self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
-            if self._animation.enabled:
-                self._animation.enabled = False
+            self._pause_animation_from_manual_edit()
             self._touch()
 
     def set_scale(self, value: float) -> None:
@@ -304,8 +328,7 @@ class ModelState:
             if self._locked:
                 return
             self._target_scale = float(np.clip(value, self.SCALE_MIN, self.SCALE_MAX))
-            if self._animation.enabled:
-                self._animation.enabled = False
+            self._pause_animation_from_manual_edit()
             self._touch()
 
     def snapshot(self) -> TransformSnapshot:
@@ -325,8 +348,7 @@ class ModelState:
                 return
             self._target_position[0] = (nx - 0.5) * _SCREEN_X_SPAN
             self._target_position[1] = (0.5 - ny) * _SCREEN_Y_SPAN
-            if self._animation.enabled:
-                self._animation.enabled = False
+            self._pause_animation_from_manual_edit()
             self._touch()
 
     def set_depth_norm(self, nz: float) -> None:
@@ -336,8 +358,7 @@ class ModelState:
                 return
             nz = float(np.clip(nz, 0.0, 1.0))
             self._target_position[2] = _DEPTH_MIN + nz * (_DEPTH_MAX - _DEPTH_MIN)
-            if self._animation.enabled:
-                self._animation.enabled = False
+            self._pause_animation_from_manual_edit()
             self._touch()
 
     def depth_norm(self) -> float:

@@ -197,6 +197,7 @@ class ControlsWindow:
         elif mode == ControlMode.ROTATE:
             self._rotate = RotateControls(self._body, self._model)
             self._rotate.pack(fill=tk.X)
+            self._rotate.sync()
         elif mode == ControlMode.SCALE:
             self._scale = ScaleControls(self._body, self._model)
             self._scale.pack(fill=tk.X)

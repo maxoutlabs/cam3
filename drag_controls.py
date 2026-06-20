@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from model_state import ModelState
+from model_state import ModelState, normalize_euler_deg
 
 _BG = "#2b2d30"
 _FG = "#e8e8e8"
@@ -71,6 +71,14 @@ class _LabeledScale(tk.Frame):
     def set_title(self, text: str) -> None:
         self._title.config(text=text)
 
+    def set_range(self, from_: float, to: float, value: float | None = None) -> None:
+        self._silent = True
+        res = max((to - from_) / 180.0, 0.1)
+        self._scale.config(from_=from_, to=to, resolution=res)
+        if value is not None:
+            self._var.set(value)
+        self._silent = False
+
 
 class MoveDepthControl(tk.Frame):
     def __init__(self, parent: tk.Widget, model: ModelState, **kwargs) -> None:
@@ -115,7 +123,7 @@ class RotateControls(tk.Frame):
             "Tilt X",
             -180,
             180,
-            float(model.euler_deg[0]),
+            normalize_euler_deg(model.euler_deg)[0],
             lambda v: model.set_euler_axis("x", v),
             color=_RED,
         )
@@ -125,7 +133,7 @@ class RotateControls(tk.Frame):
             "Turn Y",
             -180,
             180,
-            float(model.euler_deg[1]),
+            normalize_euler_deg(model.euler_deg)[1],
             lambda v: model.set_euler_axis("y", v),
             color=_GREEN,
         )
@@ -135,14 +143,14 @@ class RotateControls(tk.Frame):
             "Roll Z",
             -180,
             180,
-            float(model.euler_deg[2]),
+            normalize_euler_deg(model.euler_deg)[2],
             lambda v: model.set_euler_axis("z", v),
             color=_BLUE,
         )
         self._sz.pack(fill=tk.X)
 
     def sync(self) -> None:
-        e = self._model.euler_deg
+        e = normalize_euler_deg(self._model.euler_deg)
         self._sx.set(float(e[0]))
         self._sy.set(float(e[1]))
         self._sz.set(float(e[2]))

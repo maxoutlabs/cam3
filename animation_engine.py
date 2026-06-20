@@ -106,6 +106,12 @@ def default_custom_curve() -> list[float]:
     ]
 
 
+def normalize_custom_curve(curve: list[float]) -> list[float]:
+    if len(curve) == GRAPH_POINT_COUNT:
+        return [clamp_curve_value(float(v)) for v in curve]
+    return default_custom_curve()
+
+
 def _default_custom_curve() -> list[float]:
     return default_custom_curve()
 
@@ -212,7 +218,8 @@ def evaluate_animation(
         euler[1] = base.euler_deg[1] + drift
 
     elif preset == AnimationPreset.CUSTOM:
-        sample = sample_curve(config.custom_curve, phase) * strength
+        curve = normalize_custom_curve(config.custom_curve)
+        sample = sample_curve(curve, phase) * strength
         ch = config.custom_channel
         if ch == CustomChannel.ROT_X:
             euler[0] = base.euler_deg[0] + CUSTOM_ROT_MAX * sample
@@ -265,6 +272,6 @@ def copy_config(config: AnimationConfig) -> AnimationConfig:
         period_sec=config.period_sec,
         strength=config.strength,
         custom_channel=config.custom_channel,
-        custom_curve=deepcopy(config.custom_curve),
+        custom_curve=deepcopy(normalize_custom_curve(config.custom_curve)),
         time_sec=config.time_sec,
     )

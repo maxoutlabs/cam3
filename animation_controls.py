@@ -211,6 +211,7 @@ class AnimationControls(tk.Frame):
             cursor="hand2",
         )
         self._play_btn.pack(side=tk.LEFT)
+        self._apply_locked_state()
         tk.Button(
             play_row,
             text="Anchor pose",
@@ -354,10 +355,17 @@ class AnimationControls(tk.Frame):
         except ValueError:
             return AnimationPreset.SPIN
 
+    def _apply_locked_state(self) -> None:
+        state = tk.DISABLED if self._model.locked else tk.NORMAL
+        self._play_btn.config(state=state)
+
     def _on_play_toggle(self) -> None:
         if self._silent:
             return
-        self._model.set_animation_enabled(self._play_var.get())
+        if not self._model.set_animation_enabled(self._play_var.get()):
+            self._silent = True
+            self._play_var.set(False)
+            self._silent = False
 
     def _on_anchor(self) -> None:
         self._model.capture_animation_base()
@@ -431,8 +439,7 @@ class AnimationControls(tk.Frame):
         hi = SPIN_PERIOD_MAX if preset == AnimationPreset.SPIN else PERIOD_MAX
         cfg = self._model.animation_config()
         self._silent = True
-        self._period._scale.config(from_=lo, to=hi)
-        self._period.set(cfg.period_sec)
+        self._period.set_range(lo, hi, cfg.period_sec)
         self._strength.set_title(preset_strength_label(preset))
         self._strength.set(cfg.strength * 100.0)
         self._silent = False
@@ -449,6 +456,7 @@ class AnimationControls(tk.Frame):
         self._axis_var.set(cfg.axis)
         self._channel_var.set(cfg.custom_channel.value)
         self._refresh_preset_ui(cfg.preset)
+        self._apply_locked_state()
         self._silent = False
         if cfg.preset == AnimationPreset.CUSTOM:
             self._wave.redraw()
