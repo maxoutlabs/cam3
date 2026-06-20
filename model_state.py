@@ -9,6 +9,19 @@ from enum import Enum
 
 import numpy as np
 
+from animation_engine import (
+    AnimationBase,
+    AnimationConfig,
+    AnimationPreset,
+    CustomChannel,
+    clamp_curve_value,
+    clamp_period,
+    clamp_strength,
+    copy_config,
+    default_custom_curve,
+    evaluate_animation,
+)
+
 DEFAULT_POSITION = np.array([0.0, 0.0, -2.0], dtype=np.float64)
 DEFAULT_EULER_DEG = np.array([0.0, 0.0, 0.0], dtype=np.float64)
 DEFAULT_SCALE = 1.0
@@ -24,6 +37,7 @@ class ControlMode(str, Enum):
     MOVE = "move"
     ROTATE = "rotate"
     SCALE = "scale"
+    ANIMATE = "animate"
 
 
 def _slerp_quat(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
@@ -89,6 +103,8 @@ class ModelState:
         self._locked = False
         self._mode = ControlMode.MOVE
         self._generation = 0
+        self._animation = AnimationConfig()
+        self._anim_base = AnimationBase()
 
     def _touch(self) -> None:
         self._generation += 1
@@ -100,6 +116,19 @@ class ModelState:
         alpha = 1.0 - math.exp(-self._SMOOTH_RATE * dt)
         changed = False
         with self._lock:
+            if self._animation.enabled and not self._locked:
+                self._animation.time_sec += dt
+                out = evaluate_animation(
+                    self._animation,
+                    self._anim_base,
+                    self.SCALE_MIN,
+                    self.SCALE_MAX,
+                )
+                self._target_position = out.position.copy()
+                self._target_euler = out.euler_deg.copy()
+                self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
+                self._target_scale = out.scale
+                changed = True
             new_pos = self._position + (self._target_position - self._position) * alpha
             if float(np.linalg.norm(new_pos - self._position)) > 1e-5:
                 self._position = new_pos
@@ -157,6 +186,95 @@ class ModelState:
             self._display_quat = self._target_quat.copy()
             self._target_scale = DEFAULT_SCALE
             self._scale = DEFAULT_SCALE
+            self._animation = AnimationConfig()
+            self._anim_base = AnimationBase()
+            self._touch()
+
+    def capture_animation_base(self) -> None:
+        """Anchor animation to the current manual pose."""
+        with self._lock:
+            self._anim_base = AnimationBase(
+                position=self._target_position.copy(),
+                euler_deg=self._target_euler.copy(),
+                scale=self._target_scale,
+            )
+            self._animation.time_sec = 0.0
+            self._touch()
+
+    def animation_config(self) -> AnimationConfig:
+        with self._lock:
+            return copy_config(self._animation)
+
+    def set_animation_enabled(self, enabled: bool) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            if enabled and not self._animation.enabled:
+                self._anim_base = AnimationBase(
+                    position=self._target_position.copy(),
+                    euler_deg=self._target_euler.copy(),
+                    scale=self._target_scale,
+                )
+                self._animation.time_sec = 0.0
+            self._animation.enabled = enabled
+            self._touch()
+
+    def set_animation_preset(self, preset: AnimationPreset) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            self._animation.preset = preset
+            self._animation.period_sec = clamp_period(
+                self._animation.period_sec, preset
+            )
+            if preset == AnimationPreset.OFF:
+                self._animation.enabled = False
+            self._touch()
+
+    def set_animation_axis(self, axis: str) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            if axis in ("x", "y", "z"):
+                self._animation.axis = axis
+                self._touch()
+
+    def set_animation_period(self, seconds: float) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            self._animation.period_sec = clamp_period(
+                seconds, self._animation.preset
+            )
+            self._touch()
+
+    def set_animation_strength(self, strength: float) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            self._animation.strength = clamp_strength(strength)
+            self._touch()
+
+    def set_animation_custom_channel(self, channel: CustomChannel) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            self._animation.custom_channel = channel
+            self._touch()
+
+    def set_animation_curve_point(self, index: int, value: float) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            if 0 <= index < len(self._animation.custom_curve):
+                self._animation.custom_curve[index] = clamp_curve_value(value)
+                self._touch()
+
+    def reset_animation_curve(self) -> None:
+        with self._lock:
+            if self._locked:
+                return
+            self._animation.custom_curve = default_custom_curve()
             self._touch()
 
     @property
@@ -177,6 +295,8 @@ class ModelState:
             idx = {"x": 0, "y": 1, "z": 2}[axis]
             self._target_euler[idx] = float(degrees)
             self._target_quat = euler_xyz_deg_to_quat(self._target_euler)
+            if self._animation.enabled:
+                self._animation.enabled = False
             self._touch()
 
     def set_scale(self, value: float) -> None:
@@ -184,6 +304,8 @@ class ModelState:
             if self._locked:
                 return
             self._target_scale = float(np.clip(value, self.SCALE_MIN, self.SCALE_MAX))
+            if self._animation.enabled:
+                self._animation.enabled = False
             self._touch()
 
     def snapshot(self) -> TransformSnapshot:
@@ -203,6 +325,8 @@ class ModelState:
                 return
             self._target_position[0] = (nx - 0.5) * _SCREEN_X_SPAN
             self._target_position[1] = (0.5 - ny) * _SCREEN_Y_SPAN
+            if self._animation.enabled:
+                self._animation.enabled = False
             self._touch()
 
     def set_depth_norm(self, nz: float) -> None:
@@ -212,6 +336,8 @@ class ModelState:
                 return
             nz = float(np.clip(nz, 0.0, 1.0))
             self._target_position[2] = _DEPTH_MIN + nz * (_DEPTH_MAX - _DEPTH_MIN)
+            if self._animation.enabled:
+                self._animation.enabled = False
             self._touch()
 
     def depth_norm(self) -> float:

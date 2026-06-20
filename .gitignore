@@ -12,6 +12,8 @@ build/
 _review/
 _review2/
 Recording*.mp4
+demo.mp4
+image.png
 
 models/*.glb
 models/*.gltf

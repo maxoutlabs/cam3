@@ -62,13 +62,15 @@ Linux headless 3D: `export CAM3_GL=egl` or `CAM3_GL=osmesa`
 
 `CAM3_MIRROR=0` if the screen pad feels flipped.
 
+**Animate tab:** spin, wiggle, bob, orbit, breathe, float, or a custom draggable wave loop.
+
 ---
 
 ## Tray
 
 | | |
 |--|--|
-| Transform controls | Move / rotate / scale panel |
+| Transform controls | Move / rotate / scale / animate panel |
 | Load model | `.glb` in `models/` |
 | Wireframe cube | Default on startup |
 | None | Webcam only |

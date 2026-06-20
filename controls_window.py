@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Callable
 
 import platform_support
 
+from animation_controls import AnimationControls
 from drag_controls import MoveDepthControl, RotateControls, ScaleControls
 from model_state import ControlMode, ModelState
 from screen_pad import ScreenPad
@@ -42,6 +43,7 @@ class ControlsWindow:
         self._move_extra: MoveDepthControl | None = None
         self._rotate: RotateControls | None = None
         self._scale: ScaleControls | None = None
+        self._animate: AnimationControls | None = None
 
     @property
     def is_open(self) -> bool:
@@ -95,6 +97,7 @@ class ControlsWindow:
         self._move_extra = None
         self._rotate = None
         self._scale = None
+        self._animate = None
 
     def _destroy(self) -> None:
         self._clear_mode_widgets()
@@ -116,7 +119,7 @@ class ControlsWindow:
             self._root.title("Cam3 — Transform")
             self._root.configure(bg=_BG)
             self._root.resizable(True, False)
-            self._root.minsize(380, 200)
+            self._root.minsize(400, 220)
             if platform_support.current_os() != platform_support.OS.MACOS:
                 self._root.attributes("-topmost", True)
             self._root.protocol("WM_DELETE_WINDOW", self._quit_on_main)
@@ -141,6 +144,7 @@ class ControlsWindow:
                 ("Move", ControlMode.MOVE),
                 ("Rotate", ControlMode.ROTATE),
                 ("Scale", ControlMode.SCALE),
+                ("Animate", ControlMode.ANIMATE),
             ):
                 ttk.Button(
                     mode_row,
@@ -193,6 +197,9 @@ class ControlsWindow:
         elif mode == ControlMode.ROTATE:
             self._rotate = RotateControls(self._body, self._model)
             self._rotate.pack(fill=tk.X)
-        else:
+        elif mode == ControlMode.SCALE:
             self._scale = ScaleControls(self._body, self._model)
             self._scale.pack(fill=tk.X)
+        else:
+            self._animate = AnimationControls(self._body, self._model)
+            self._animate.pack(fill=tk.X)

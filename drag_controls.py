@@ -29,9 +29,10 @@ class _LabeledScale(tk.Frame):
         super().__init__(parent, bg=_BG)
         self._on_change = on_change
         self._silent = True
-        tk.Label(self, text=label, bg=_BG, fg=color, font=("Segoe UI", 9, "bold")).pack(
-            anchor=tk.W
+        self._title = tk.Label(
+            self, text=label, bg=_BG, fg=color, font=("Segoe UI", 9, "bold")
         )
+        self._title.pack(anchor=tk.W)
         self._var = tk.DoubleVar(value=value)
         res = max((to - from_) / 180.0, 0.1)
         self._scale = tk.Scale(
@@ -66,6 +67,9 @@ class _LabeledScale(tk.Frame):
         self._silent = True
         self._var.set(value)
         self._silent = False
+
+    def set_title(self, text: str) -> None:
+        self._title.config(text=text)
 
 
 class MoveDepthControl(tk.Frame):
