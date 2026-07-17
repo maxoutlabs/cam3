@@ -19,7 +19,7 @@
 ## Run it (30 seconds)
 
 ```bash
-git clone https://github.com/aadi-joshi/cam3.git
+git clone https://github.com/maxoutlabs/cam3.git
 cd cam3
 ```
 
@@ -86,4 +86,4 @@ https://github.com/user-attachments/assets/ed5ec5f0-992d-4e70-b9b9-8d303d619f63
 
 ## License
 
-[MIT](LICENSE) © [Aadi Joshi](https://github.com/aadi-joshi)
+[MIT](LICENSE) © [Aadi Joshi](https://github.com/aadi-joshi) / [maxoutlabs](https://github.com/maxoutlabs)
